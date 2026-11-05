@@ -1,0 +1,105 @@
+// Career Agent 实体类型定义
+// 与 db/schema.sql 一一对应（字段命名从 snake_case 转为 camelCase）
+
+/** 反馈动作（feedback_events.action 的受控取值） */
+export type FeedbackAction = 'interested' | 'pass' | 'applied'
+
+/**
+ * 岗位派生状态：
+ * - new：该岗位没有任何反馈事件
+ * - 其余：取该岗位最新一条 feedback_event 的 action
+ */
+export type JobStatus = 'new' | FeedbackAction
+
+export interface Job {
+  id: string
+  title: string
+  company: string
+  location: string | null
+  salaryMin: number | null
+  salaryMax: number | null
+  currency: string
+  source: string
+  sourceUrl: string
+  description: string | null
+  /** ISO 日期（YYYY-MM-DD） */
+  postedAt: string | null
+  /** ISO 时间戳 */
+  collectedAt: string
+  dedupKey: string
+}
+
+export interface FeedbackEvent {
+  id: string
+  jobId: string
+  action: FeedbackAction
+  comment: string | null
+  createdAt: string
+}
+
+/** 岗位 + 派生状态 + 反馈历史（列表/详情视图使用） */
+export interface JobWithStatus extends Job {
+  status: JobStatus
+  feedbackEvents: FeedbackEvent[]
+}
+
+export interface Preferences {
+  id: string
+  industries: string[]
+  roles: string[]
+  locations: string[]
+  salaryMin: number | null
+  keywordsInclude: string[]
+  keywordsExclude: string[]
+  updatedAt: string
+}
+
+/** 素材库条目：一行 = 一个可讲的故事 */
+export interface Material {
+  id: string
+  project: string
+  title: string
+  role: string | null
+  duration: string | null
+  capabilityL1: string | null
+  capabilityL2: string | null
+  tags: string[]
+  metrics: string | null
+  /** markdown，自由结构（不强制 STAR 四段） */
+  content: string | null
+  others: Record<string, unknown> | null
+  updatedAt: string
+}
+
+export interface InterviewQuestion {
+  id: string
+  category: string | null
+  question: string
+  /** markdown 回答草稿 */
+  answerDraft: string | null
+  linkedMaterialId: string | null
+  /** 把握度 1–5 */
+  confidence: number | null
+  updatedAt: string
+}
+
+export interface PushLog {
+  id: string
+  jobId: string | null
+  channel: string
+  pushedAt: string
+  userReply: string | null
+}
+
+/** 能力域受控词表（capability_l1，只服务筛选，不承担身份） */
+export const CAPABILITY_L1_OPTIONS = [
+  '数据分析',
+  '用户增长',
+  '产品设计',
+  '项目管理',
+  '技术工程',
+  '商业分析',
+] as const
+
+/** 问题库分类（受控取值） */
+export const QUESTION_CATEGORIES = ['项目深挖', '行为面', '技术概念', '其他'] as const
