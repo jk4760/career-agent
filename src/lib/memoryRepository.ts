@@ -365,7 +365,7 @@ export function useMemoryRepository(): Repository {
   const [questions, setQuestions] = useState<InterviewQuestion[]>(seedQuestions)
   const [preferences, setPreferences] = useState<Preferences>(seedPreferences)
 
-  return useMemo<Repository>(
+  const repo = useMemo<Repository>(
     () => ({
       async listJobs(status?: JobStatus) {
         const all = jobs
@@ -436,4 +436,5 @@ export function useMemoryRepository(): Repository {
     }),
     [jobs, feedbackEvents, materials, questions, preferences],
   )
+  return repo
 }

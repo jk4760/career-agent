@@ -1,122 +1,68 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import './App.css'
+import { BrowserRouter, NavLink, Navigate, Route, Routes } from 'react-router-dom'
+import { useMemoryRepository } from '@/lib/memoryRepository'
+import { RepositoryContext } from '@/lib/repository'
+import JobsPage from '@/pages/JobsPage'
+import MaterialsPage from '@/pages/MaterialsPage'
+import PreferencesPage from '@/pages/PreferencesPage'
+import QuestionsPage from '@/pages/QuestionsPage'
 
-function App() {
-  const [count, setCount] = useState(0)
+const navItems = [
+  { to: '/jobs', label: '岗位流' },
+  { to: '/materials', label: '素材库' },
+  { to: '/questions', label: '问题库' },
+  { to: '/preferences', label: '偏好设置' },
+]
+
+export default function App() {
+  const repository = useMemoryRepository()
+
+  const navLinkClass = ({ isActive }: { isActive: boolean }) =>
+    `rounded-md px-3 py-2 text-sm whitespace-nowrap transition-colors ${
+      isActive
+        ? 'bg-secondary font-medium text-foreground'
+        : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+    }`
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
+    <RepositoryContext.Provider value={repository}>
+      <BrowserRouter>
+        <div className="flex min-h-screen bg-muted/30">
+          {/* 桌面端左侧导航 */}
+          <aside className="hidden min-h-screen w-48 shrink-0 flex-col gap-1 border-r bg-background p-4 sm:flex">
+            <div className="mb-4 px-3">
+              <div className="font-semibold">Career Agent</div>
+              <div className="text-xs text-muted-foreground">个人求职工作台</div>
+            </div>
+            {navItems.map((item) => (
+              <NavLink key={item.to} to={item.to} className={navLinkClass}>
+                {item.label}
+              </NavLink>
+            ))}
+          </aside>
 
-      <div className="ticks"></div>
+          <div className="flex min-w-0 flex-1 flex-col">
+            {/* 移动端顶部导航 */}
+            <nav className="flex gap-1 overflow-x-auto border-b bg-background p-2 sm:hidden">
+              {navItems.map((item) => (
+                <NavLink key={item.to} to={item.to} className={navLinkClass}>
+                  {item.label}
+                </NavLink>
+              ))}
+            </nav>
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
+            <main className="mx-auto w-full max-w-5xl flex-1 p-4 sm:p-6">
+              <Routes>
+                <Route path="/" element={<Navigate to="/jobs" replace />} />
+                <Route path="/jobs" element={<JobsPage />} />
+                <Route path="/materials" element={<MaterialsPage />} />
+                <Route path="/questions" element={<QuestionsPage />} />
+                <Route path="/preferences" element={<PreferencesPage />} />
+                <Route path="*" element={<Navigate to="/jobs" replace />} />
+              </Routes>
+            </main>
+          </div>
         </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
+      </BrowserRouter>
+    </RepositoryContext.Provider>
   )
 }
-
-export default App
