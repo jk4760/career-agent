@@ -1,32 +1,62 @@
-# React + TypeScript + Vite
+# Career Agent
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+个人求职一站式平台：AI 定时采集匹配岗位 → Web Portal 管理（岗位流 / 素材库 / 问题库 / 偏好设置），后续接飞书机器人做每日推送与反馈闭环。
 
-Currently, two official plugins are available:
+当前为 **骨架 v0.1**：页面与交互完整，数据走内存假数据，不接真实数据库。
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## 技术栈
 
-## React Compiler
+- 前端：Vite + React 18 + TypeScript + Tailwind CSS v4 + shadcn/ui（Base UI 版）+ react-router
+- 数据库：PostgreSQL（本阶段只有 `db/schema.sql`，不连接真实库）
+- 采集器：Python 脚本（后续里程碑）
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## 运行
 
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+npm install
+npm run dev      # 开发
+npm run build    # 类型检查 + 生产构建
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+## 架构
+
+```
+db/schema.sql            # 六张表的 PostgreSQL schema（M2 建库用）
+src/
+├── types/               # 实体类型 + JobStatus 派生类型（与 schema 对应）
+├── lib/
+│   ├── repository.ts        # Repository 接口 + Context/Hook
+│   └── memoryRepository.ts  # 内存实现 + 假数据（10 条岗位等）
+├── components/          # JobCard、StatusBadge、FeedbackDialog、MaterialForm、ui/(shadcn)
+└── pages/               # JobsPage / MaterialsPage / QuestionsPage / PreferencesPage
+```
+
+### 数据访问层（可替换设计）
+
+页面只依赖 `Repository` 接口（`src/lib/repository.ts`），通过 Context 注入。骨架阶段由 `useMemoryRepository`（内存 + 假数据）实现；**M2 将用 Postgres 实现同一接口替换内存版，页面代码无需改动**。
+
+注意一个实现约定：内存实现的状态放在 App 层，每次变更会生成新的 repo 实例，页面的 effect 监听 repo 变化自动重新拉取。因此**变更操作后不要手动用旧闭包 reload**（旧闭包读到的是变更前的数据，会把新数据覆盖回去）。
+
+### 数据模型要点
+
+- `feedback_events` 是追加式事件日志，不改写状态——岗位状态永远由"最新一条事件"派生（`new` = 无事件），允许改判。这是未来偏好学习的数据资产。
+- `materials` 一行 = 一个可讲的**故事**（不是项目），项目只是分组属性。
+- ID 一律 UUID；`capability_l1/l2` 是受控词表（只服务筛选），`tags[]` 是自由标签，两者不混用。
+
+## 页面
+
+| 路由 | 说明 |
+|---|---|
+| `/jobs` | 岗位流：状态筛选 tab、卡片展开详情、感兴趣/不合适/已投递反馈（可附一句话 comment） |
+| `/materials` | 素材库：故事卡片流，按项目分组视图 + capability_l1 筛选，新建/编辑对话框，删除二次确认 |
+| `/questions` | 问题库：左分类右详情，编辑回答草稿、关联故事、把握度 1–5 星，未关联故事计数提醒 |
+| `/preferences` | 偏好设置：行业/职能/城市/薪资底线/包含排除关键词，保存即生效 |
+
+## 里程碑
+
+| 里程碑 | 内容 | 状态 |
+|---|---|---|
+| M1 | Portal 骨架（本仓库当前状态） | ✅ |
+| M2 | 接真实 Postgres（Supabase/Neon），实现 DB 版 repository | 未开始 |
+| M3 | Python 采集脚本：岗位抓取、清洗、去重（dedup_key） | 未开始 |
+| M4 | 匹配打分 + 飞书机器人推送 + 反馈回写偏好（动态权重） | 未开始 |
