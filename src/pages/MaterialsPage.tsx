@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ChevronDown, FolderOpen, Pencil, Plus, Trash2 } from 'lucide-react'
+import { ChevronDown, FolderOpen, Pencil, Plus, Search, Trash2 } from 'lucide-react'
 import { EmptyState } from '@/components/EmptyState'
 import { MarkdownContent } from '@/components/MarkdownContent'
 import { MaterialForm } from '@/components/MaterialForm'
@@ -14,46 +14,52 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { Input } from '@/components/ui/input'
 import { useRepository } from '@/lib/repository'
 import { cn } from '@/lib/utils'
-import { CAPABILITY_L1_OPTIONS, type Material } from '@/types'
-
-const ALL = '__all__'
+import type { Material } from '@/types'
 
 /**
- * 素材库（§10.7 树状大纲/站点图式，替换卡片网格）：
- * 一级节点 = 项目（可折叠），二级行 = 故事（缩进 24px，点击就地展开）。
+ * 素材库（§10.7 树状大纲/站点图式）：
+ * 第一行 facet chips（数据派生，替代能力域下拉）+ 第二行搜索框 + 两级树。
  * 零卡片、零阴影；行间 0.5px 细线；同一时间只展开一个故事。
  */
 export default function MaterialsPage() {
   const repo = useRepository()
   const [materials, setMaterials] = useState<Material[]>([])
-  const [capFilter, setCapFilter] = useState<string>(ALL)
+  const [facetCounts, setFacetCounts] = useState<{ value: string; count: number }[]>([])
+  const [facet, setFacet] = useState<string | null>(null)
+  const [search, setSearch] = useState('')
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<Material | null>(null)
+  const [prefillFacet, setPrefillFacet] = useState<string | null>(null)
+  const [addingFacet, setAddingFacet] = useState(false)
+  const [facetDraft, setFacetDraft] = useState('')
   const [deleting, setDeleting] = useState<Material | null>(null)
 
   const reload = useCallback(async () => {
-    setMaterials(await repo.listMaterials())
+    const [ms, fs] = await Promise.all([repo.listMaterials(), repo.listFacets()])
+    setMaterials(ms)
+    setFacetCounts(fs)
   }, [repo])
 
   useEffect(() => {
     void reload()
   }, [reload])
 
-  // 能力域筛选：未命中故事隐藏，只保留包含命中故事的项目节点（§10.7）
+  // facet 筛选与搜索为 AND 关系；只保留包含命中故事的项目节点（§10.7）
   const groups = useMemo(() => {
-    const filtered =
-      capFilter === ALL ? materials : materials.filter((m) => m.capabilityL1 === capFilter)
+    const q = search.trim().toLowerCase()
+    const filtered = materials.filter((m) => {
+      if (facet && !m.facets.includes(facet)) return false
+      if (!q) return true
+      const haystack = [m.title, m.content ?? '', ...m.tags, ...m.facets]
+        .join('\n')
+        .toLowerCase()
+      return haystack.includes(q)
+    })
     const map = new Map<string, Material[]>()
     for (const m of filtered) {
       const list = map.get(m.project) ?? []
@@ -61,9 +67,10 @@ export default function MaterialsPage() {
       map.set(m.project, list)
     }
     return [...map.entries()]
-  }, [materials, capFilter])
+  }, [materials, facet, search])
 
   const storyCount = groups.reduce((sum, [, items]) => sum + items.length, 0)
+  const filtering = facet !== null || search.trim() !== ''
 
   // 变更后无需手动 reload：repo 随 App 状态更新生成新实例，
   // 上面的 effect 会随之重新拉取（手动 reload 反而会用过期闭包覆盖新数据）
@@ -89,28 +96,92 @@ export default function MaterialsPage() {
     })
   }
 
+  const chipClass = (active: boolean) =>
+    cn(
+      'shrink-0 cursor-pointer rounded-lg border px-2 py-1 text-xs whitespace-nowrap transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50',
+      active
+        ? 'border-transparent bg-accent font-medium text-accent-foreground'
+        : 'bg-white text-muted-foreground hover:bg-muted',
+    )
+
+  // 「+ 新增」不直接创建标签：输入后打开新建表单并预填该标签（§10.7）
+  const commitFacetDraft = () => {
+    const v = facetDraft.trim()
+    setAddingFacet(false)
+    setFacetDraft('')
+    if (!v) return
+    setEditing(null)
+    setPrefillFacet(v)
+    setFormOpen(true)
+  }
+
   return (
     <div className="space-y-4">
-      {/* 顶部工具栏：筛选 + 计数 + 新建（树即分组，不再有分组开关） */}
-      <div className="flex flex-wrap items-center gap-2">
-        <Select value={capFilter} onValueChange={(v) => setCapFilter(v as string)}>
-          <SelectTrigger className="w-44">
-            <SelectValue>{(v: string) => (v === ALL ? '全部能力域' : v)}</SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>全部能力域</SelectItem>
-            {CAPABILITY_L1_OPTIONS.map((c) => (
-              <SelectItem key={c} value={c}>
-                {c}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <span className="text-sm text-muted-foreground tabular-nums">共 {storyCount} 个故事</span>
+      {/* 第一行：facet chips 筛选行（超宽横向滚动） */}
+      <div className="flex items-center gap-1.5">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto">
+          <button type="button" className={chipClass(facet === null)} onClick={() => setFacet(null)}>
+            全部
+          </button>
+          {facetCounts.map((f) => (
+            <button
+              key={f.value}
+              type="button"
+              className={chipClass(facet === f.value)}
+              onClick={() => setFacet(facet === f.value ? null : f.value)}
+            >
+              {f.value}{' '}
+              <span className="text-xs text-muted-foreground tabular-nums">{f.count}</span>
+            </button>
+          ))}
+          {addingFacet ? (
+            <input
+              autoFocus
+              className="w-24 shrink-0 rounded-lg border border-dashed bg-white px-2 py-1 text-xs outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+              placeholder="新标签名"
+              value={facetDraft}
+              onChange={(e) => setFacetDraft(e.target.value)}
+              onBlur={commitFacetDraft}
+              onKeyDown={(e) => {
+                if (e.nativeEvent.isComposing) return
+                if (e.key === 'Enter') commitFacetDraft()
+                if (e.key === 'Escape') {
+                  setAddingFacet(false)
+                  setFacetDraft('')
+                }
+              }}
+            />
+          ) : (
+            <button
+              type="button"
+              className="shrink-0 cursor-pointer rounded-lg border border-dashed px-2 py-1 text-xs whitespace-nowrap text-muted-foreground transition-colors outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
+              onClick={() => setAddingFacet(true)}
+            >
+              + 新增
+            </button>
+          )}
+        </div>
+        <span className="shrink-0 text-sm text-muted-foreground tabular-nums">
+          共 {storyCount} 个故事
+        </span>
+      </div>
+
+      {/* 第二行：搜索框（title / tags / facets / content 子串匹配，不区分大小写）+ 新建按钮 */}
+      <div className="flex items-center gap-2">
+        <div className="relative w-full max-w-sm">
+          <Search className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            className="pl-8"
+            placeholder="搜索故事标题 / 标签 / 内容"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
         <div className="flex-1" />
         <Button
           onClick={() => {
             setEditing(null)
+            setPrefillFacet(null)
             setFormOpen(true)
           }}
         >
@@ -120,16 +191,30 @@ export default function MaterialsPage() {
       </div>
 
       {groups.length === 0 ? (
-        <EmptyState
-          icon={FolderOpen}
-          title={capFilter === ALL ? '暂无故事' : `「${capFilter}」能力域下暂无故事`}
-          description="把项目经历拆成一个可讲的故事，面试时随取随用。"
-          actionLabel="新建故事"
-          onAction={() => {
-            setEditing(null)
-            setFormOpen(true)
-          }}
-        />
+        filtering ? (
+          <EmptyState
+            icon={Search}
+            title="没有符合条件的故事"
+            description="换个关键词或 facet 试试。"
+            actionLabel="清空筛选"
+            onAction={() => {
+              setFacet(null)
+              setSearch('')
+            }}
+          />
+        ) : (
+          <EmptyState
+            icon={FolderOpen}
+            title="暂无故事"
+            description="把项目经历拆成一个可讲的故事，面试时随取随用。"
+            actionLabel="新建故事"
+            onAction={() => {
+              setEditing(null)
+              setPrefillFacet(null)
+              setFormOpen(true)
+            }}
+          />
+        )
       ) : (
         <div className="rounded-lg border bg-card [&>*+*]:border-t-[0.5px] [&>*+*]:border-border">
           {groups.map(([project, items]) => {
@@ -204,6 +289,18 @@ export default function MaterialsPage() {
                               ) : (
                                 <p className="text-sm text-muted-foreground">（暂无内容）</p>
                               )}
+                              {m.facets.length > 0 && (
+                                <p className="mt-2 flex flex-wrap gap-1.5">
+                                  {m.facets.map((f) => (
+                                    <span
+                                      key={f}
+                                      className="rounded bg-accent px-1.5 py-px text-[11px] text-accent-foreground"
+                                    >
+                                      {f}
+                                    </span>
+                                  ))}
+                                </p>
+                              )}
                               {m.tags.length > 0 && (
                                 <p className="mt-2 text-xs text-foreground/50">
                                   {m.tags.map((t) => `#${t}`).join('  ')}
@@ -215,6 +312,7 @@ export default function MaterialsPage() {
                                   variant="outline"
                                   onClick={() => {
                                     setEditing(m)
+                                    setPrefillFacet(null)
                                     setFormOpen(true)
                                   }}
                                 >
@@ -241,6 +339,7 @@ export default function MaterialsPage() {
       <MaterialForm
         open={formOpen}
         initial={editing}
+        prefillFacet={prefillFacet}
         onOpenChange={setFormOpen}
         onSave={handleSave}
       />

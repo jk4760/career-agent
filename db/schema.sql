@@ -58,6 +58,7 @@ CREATE TABLE materials (
   capability_l1 TEXT,                        -- 能力域（受控词表，如：数据分析）
   capability_l2 TEXT,                        -- 细分能力（受控词表，如：指标体系搭建）
   tags          TEXT[],                      -- 自由标签
+  facets        TEXT[],                      -- 经历/公司标签（自由文本、不分类型，如 {"互联网","字节跳动"}）；chips 由该字段派生
   metrics       TEXT,                        -- 量化成果，一两个即可
   content       TEXT,                        -- markdown，自由结构（不强制 STAR 四段）
   others        JSONB,                       -- 以备不时之需

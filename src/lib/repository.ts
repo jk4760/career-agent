@@ -24,6 +24,11 @@ export interface Repository {
   /** 新建或更新（按 id 判断），返回保存后的实体 */
   saveMaterial(material: Material): Promise<Material>
   deleteMaterial(id: string): Promise<void>
+  /**
+   * 对全部 materials 的 facets 去重并计数，返回按 count 降序的列表。
+   * chips 完全由数据派生：某 value 的最后一条引用被移除后，chip 自动消失。
+   */
+  listFacets(): Promise<{ value: string; count: number }[]>
 
   listQuestions(): Promise<InterviewQuestion[]>
   saveQuestion(question: InterviewQuestion): Promise<InterviewQuestion>

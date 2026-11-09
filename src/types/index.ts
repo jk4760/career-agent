@@ -64,6 +64,8 @@ export interface Material {
   capabilityL1: string | null
   capabilityL2: string | null
   tags: string[]
+  /** 经历/公司标签（自由文本、不分类型）；素材库 chips 由该字段派生 */
+  facets: string[]
   metrics: string | null
   /** markdown，自由结构（不强制 STAR 四段） */
   content: string | null

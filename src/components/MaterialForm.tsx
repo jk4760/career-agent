@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -32,12 +33,14 @@ interface MaterialFormProps {
   open: boolean
   /** null 表示新建 */
   initial: Material | null
+  /** 「+ 新增」chip 路径：新建时预填的经历标签（§10.7） */
+  prefillFacet?: string | null
   onOpenChange: (open: boolean) => void
   onSave: (material: Material) => void
 }
 
 /** 素材（故事）新建/编辑对话框，字段对应 materials 表全字段 */
-export function MaterialForm({ open, initial, onOpenChange, onSave }: MaterialFormProps) {
+export function MaterialForm({ open, initial, prefillFacet, onOpenChange, onSave }: MaterialFormProps) {
   const [project, setProject] = useState('')
   const [title, setTitle] = useState('')
   const [role, setRole] = useState('')
@@ -45,6 +48,8 @@ export function MaterialForm({ open, initial, onOpenChange, onSave }: MaterialFo
   const [capabilityL1, setCapabilityL1] = useState('')
   const [capabilityL2, setCapabilityL2] = useState('')
   const [tags, setTags] = useState('')
+  const [facets, setFacets] = useState<string[]>([])
+  const [facetInput, setFacetInput] = useState('')
   const [metrics, setMetrics] = useState('')
   const [content, setContent] = useState('')
 
@@ -57,9 +62,11 @@ export function MaterialForm({ open, initial, onOpenChange, onSave }: MaterialFo
     setCapabilityL1(initial?.capabilityL1 ?? '')
     setCapabilityL2(initial?.capabilityL2 ?? '')
     setTags(initial?.tags.join(', ') ?? '')
+    setFacets(initial?.facets ?? (prefillFacet ? [prefillFacet] : []))
+    setFacetInput('')
     setMetrics(initial?.metrics ?? '')
     setContent(initial?.content ?? '')
-  }, [open, initial])
+  }, [open, initial, prefillFacet])
 
   const canSave = project.trim() !== '' && title.trim() !== ''
 
@@ -74,6 +81,7 @@ export function MaterialForm({ open, initial, onOpenChange, onSave }: MaterialFo
       capabilityL1: capabilityL1 || null,
       capabilityL2: capabilityL2.trim() || null,
       tags: parseTags(tags),
+      facets,
       metrics: metrics.trim() || null,
       content: content.trim() || null,
       others: initial?.others ?? null,
@@ -90,6 +98,49 @@ export function MaterialForm({ open, initial, onOpenChange, onSave }: MaterialFo
         </DialogHeader>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {/* 第一行：经历标签（facets），回车添加、可逐个删除（§10.7） */}
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label htmlFor="m-facets">经历标签</Label>
+            <div className="flex min-h-8 w-full flex-wrap items-center gap-1.5 rounded-md border border-input bg-white px-2 py-1.5 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
+              {facets.map((f) => (
+                <span
+                  key={f}
+                  className="flex items-center gap-1 rounded bg-accent px-1.5 py-0.5 text-xs text-accent-foreground"
+                >
+                  {f}
+                  <button
+                    type="button"
+                    aria-label={`删除标签 ${f}`}
+                    className="cursor-pointer"
+                    onClick={() => setFacets(facets.filter((x) => x !== f))}
+                  >
+                    <X className="size-3" />
+                  </button>
+                </span>
+              ))}
+              <input
+                id="m-facets"
+                className="min-w-24 flex-1 bg-transparent text-sm outline-none"
+                placeholder={facets.length === 0 ? '回车添加，如：互联网、字节跳动' : ''}
+                value={facetInput}
+                onChange={(e) => setFacetInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.nativeEvent.isComposing) return
+                  if (
+                    (e.key === 'Enter' || e.key === ',' || e.key === '，') &&
+                    facetInput.trim()
+                  ) {
+                    e.preventDefault()
+                    const v = facetInput.trim()
+                    if (!facets.includes(v)) setFacets([...facets, v])
+                    setFacetInput('')
+                  } else if (e.key === 'Backspace' && !facetInput && facets.length > 0) {
+                    setFacets(facets.slice(0, -1))
+                  }
+                }}
+              />
+            </div>
+          </div>
           <div className="space-y-1.5">
             <Label htmlFor="m-project">所属项目 *</Label>
             <Input

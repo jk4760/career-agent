@@ -200,6 +200,7 @@ const seedMaterials: Material[] = [
     capabilityL1: '数据分析',
     capabilityL2: '指标体系搭建',
     tags: ['SQL', '看板', '北极星指标'],
+    facets: ['互联网', '字节跳动'],
     metrics: '报表人力成本下降 60%，核心指标口径统一至 42 个',
     content:
       '## 背景\n业务高速增长期，各团队指标口径混乱，同一份 GMV 有三个数字。\n\n## 过程\n梳理业务流程，与 6 个业务方逐一对齐口径，按 OSM 模型拆解出三级指标体系，落地到统一看板。\n\n## 结果\n口径统一后，经营例会效率明显提升，临时取数需求下降七成。',
@@ -215,6 +216,7 @@ const seedMaterials: Material[] = [
     capabilityL1: '数据分析',
     capabilityL2: '预测与复盘',
     tags: ['预测', '复盘'],
+    facets: ['互联网', '字节跳动'],
     metrics: 'GMV 预估偏差 25% → 8%',
     content:
       '## 背景\n双 11 备货依赖 GMV 预估，往年偏差高达 25%。\n\n## 过程\n拆解偏差来源，发现主要误差来自新客贡献；引入分渠道滚动预测，每 6 小时校准一次。\n\n## 结果\n最终偏差收敛到 8%，备货损耗显著下降。',
@@ -230,6 +232,7 @@ const seedMaterials: Material[] = [
     capabilityL1: '用户增长',
     capabilityL2: '分层运营',
     tags: ['A/B测试', '留存'],
+    facets: ['互联网', '美团'],
     metrics: '付费转化率 +18%，次月留存 +6pp',
     content:
       '## 背景\n会员增长停滞，粗放式补贴 ROI 持续走低。\n\n## 过程\n按 RFM 模型把用户分为 5 层，针对高潜力层设计定向权益包，A/B 实验验证后全量。\n\n## 结果\n付费转化率提升 18%，补贴费用反而下降 12%。',
@@ -245,6 +248,7 @@ const seedMaterials: Material[] = [
     capabilityL1: '用户增长',
     capabilityL2: '消息触达',
     tags: ['push', '文案', '频控'],
+    facets: ['互联网', '美团'],
     metrics: 'push 打开率 2.1% → 4.3%',
     content:
       '## 背景\npush 打开率长期低于行业均值。\n\n## 过程\n从发送时段、文案个性化、频控策略三个维度做实验矩阵，逐步全量最优组合。\n\n## 结果\n打开率翻倍，且卸载率没有上升。',
@@ -260,6 +264,7 @@ const seedMaterials: Material[] = [
     capabilityL1: '技术工程',
     capabilityL2: 'LLM 应用',
     tags: ['RAG', 'LangChain'],
+    facets: ['AI', '独立项目'],
     metrics: '人工客服工单量下降 35%，首解率 82%',
     content:
       '## 背景\n客服团队 60% 工单是重复问题。\n\n## 过程\n基于 RAG 架构搭建知识库问答机器人，设计评测集持续优化召回质量，灰度上线后迭代三轮。\n\n## 结果\n工单量下降 35%，机器人首解率达到 82%。',
@@ -401,6 +406,16 @@ export function useMemoryRepository(): Repository {
           return exists ? prev.map((m) => (m.id === saved.id ? saved : m)) : [...prev, saved]
         })
         return saved
+      },
+
+      async listFacets() {
+        const counts = new Map<string, number>()
+        for (const m of materials) {
+          for (const f of m.facets) counts.set(f, (counts.get(f) ?? 0) + 1)
+        }
+        return [...counts.entries()]
+          .map(([value, count]) => ({ value, count }))
+          .sort((a, b) => b.count - a.count)
       },
 
       async deleteMaterial(id: string) {
