@@ -108,7 +108,7 @@ export function JobRow({ job, onFeedback }: JobRowProps) {
 
       {expanded && (
         <div className="border-t-[0.5px] bg-muted/40 px-4 py-3">
-          <div className="job-expand">
+          <div className="row-expand">
             <p className="max-w-3xl text-[15px] leading-relaxed whitespace-pre-wrap text-foreground/90">
               {job.description ?? '（无描述）'}
             </p>

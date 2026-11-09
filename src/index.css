@@ -157,8 +157,8 @@
     }
 }
 
-/* 岗位行展开动画（§10.6.2）：opacity + line-height 渐变，不用高度硬切 */
-@keyframes job-expand {
+/* 行展开动画（§10.6.2 / §10.7）：opacity + line-height 渐变，不用高度硬切 */
+@keyframes row-expand {
   from {
     opacity: 0;
     line-height: 0;
@@ -170,7 +170,7 @@
 }
 
 @layer utilities {
-  .job-expand {
-    animation: job-expand 0.4s ease;
+  .row-expand {
+    animation: row-expand 0.4s ease;
   }
 }
