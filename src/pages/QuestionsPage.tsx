@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Star } from 'lucide-react'
+import { MessagesSquare, Star } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -91,16 +91,15 @@ export default function QuestionsPage() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-xl font-semibold">问题库</h1>
-        <p className="mt-0.5 text-sm text-muted-foreground">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm text-muted-foreground tabular-nums">
           共 {questions.length} 个问题
-          {unlinkedCount > 0 && (
-            <span className="ml-2 rounded-md bg-amber-100 px-2 py-0.5 text-xs text-amber-800">
-              还有 {unlinkedCount} 个问题未关联故事
-            </span>
-          )}
-        </p>
+        </span>
+        {unlinkedCount > 0 && (
+          <span className="rounded-md bg-status-new/10 px-2 py-0.5 text-xs font-medium text-status-new">
+            还有 {unlinkedCount} 个问题未关联故事
+          </span>
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-[260px_1fr]">
@@ -129,22 +128,25 @@ export default function QuestionsPage() {
           <Separator />
           <div className="space-y-1">
             {visibleQuestions.length === 0 && (
-              <p className="text-sm text-muted-foreground">该分类下暂无问题</p>
+              <div className="flex flex-col items-center gap-1.5 rounded-lg border border-dashed px-3 py-8 text-center">
+                <MessagesSquare className="size-5 text-muted-foreground" strokeWidth={1.5} />
+                <p className="text-sm text-muted-foreground">该分类下暂无问题</p>
+              </div>
             )}
             {visibleQuestions.map((q) => (
               <button
                 key={q.id}
                 type="button"
                 onClick={() => setSelectedId(q.id)}
-                className={`w-full cursor-pointer rounded-md px-2 py-1.5 text-left text-sm ${
+                className={`w-full cursor-pointer rounded-md px-2 py-1.5 text-left text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50 ${
                   q.id === selectedId
-                    ? 'bg-secondary font-medium'
-                    : 'text-muted-foreground hover:bg-muted'
+                    ? 'bg-accent font-medium text-accent-foreground'
+                    : 'text-muted-foreground hover:bg-muted hover:text-foreground'
                 }`}
               >
                 <span className="line-clamp-2">{q.question}</span>
                 {!q.linkedMaterialId && (
-                  <span className="mt-0.5 inline-block rounded bg-amber-100 px-1 text-xs text-amber-800">
+                  <span className="mt-0.5 inline-block rounded bg-status-new/10 px-1 text-xs text-status-new">
                     未关联故事
                   </span>
                 )}
@@ -156,14 +158,17 @@ export default function QuestionsPage() {
         {/* 右栏：问题详情编辑 */}
         <div className="min-w-0 rounded-lg border bg-card p-4">
           {!selected || !draft ? (
-            <p className="text-sm text-muted-foreground">请选择左侧的问题</p>
+            <div className="flex flex-col items-center justify-center gap-1.5 py-16 text-center">
+              <MessagesSquare className="size-6 text-muted-foreground" strokeWidth={1.5} />
+              <p className="text-sm text-muted-foreground">从左侧选择一个问题开始编辑</p>
+            </div>
           ) : (
             <div className="space-y-4">
               <div>
                 <div className="flex flex-wrap items-center gap-2">
                   {selected.category && <Badge variant="outline">{selected.category}</Badge>}
                 </div>
-                <h2 className="mt-2 font-medium">{selected.question}</h2>
+                <h2 className="mt-2 text-[15px] font-medium">{selected.question}</h2>
               </div>
 
               <div className="space-y-1.5">
@@ -216,7 +221,7 @@ export default function QuestionsPage() {
                     <button
                       key={n}
                       type="button"
-                      className="cursor-pointer p-0.5"
+                      className="cursor-pointer rounded-md p-3 outline-none focus-visible:ring-3 focus-visible:ring-ring/50 sm:p-0.5"
                       onClick={() => {
                         setDraft({
                           ...draft,
@@ -242,7 +247,7 @@ export default function QuestionsPage() {
 
               <div className="flex items-center gap-3">
                 <Button onClick={handleSave}>保存</Button>
-                {saved && <span className="text-sm text-emerald-600">已保存</span>}
+                {saved && <span className="text-sm font-medium text-status-interested">已保存</span>}
                 <span className="text-xs text-muted-foreground">
                   上次更新：{selected.updatedAt.slice(0, 10)}
                 </span>

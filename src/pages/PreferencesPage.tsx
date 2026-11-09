@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Separator } from '@/components/ui/separator'
 import { useRepository } from '@/lib/repository'
 import type { Preferences } from '@/types'
 
@@ -68,16 +67,11 @@ export default function PreferencesPage() {
 
   return (
     <div className="max-w-xl space-y-4">
-      <div>
-        <h1 className="text-xl font-semibold">偏好设置</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          静态结构化筛选条件，供后续采集匹配使用。多值用逗号分隔。
-        </p>
-      </div>
+      <p className="text-sm text-muted-foreground">
+        静态结构化筛选条件，供后续采集匹配使用。多值用逗号分隔。
+      </p>
 
-      <Separator />
-
-      <div className="space-y-4">
+      <div className="space-y-4 rounded-lg border bg-card p-4 sm:p-6">
         <div className="space-y-1.5">
           <Label htmlFor="p-industries">目标行业</Label>
           <Input
@@ -138,8 +132,8 @@ export default function PreferencesPage() {
 
       <div className="flex items-center gap-3">
         <Button onClick={handleSave}>保存</Button>
-        {saved && <span className="text-sm text-emerald-600">已保存</span>}
-        <span className="text-xs text-muted-foreground">
+        {saved && <span className="text-sm font-medium text-status-interested">已保存</span>}
+        <span className="text-xs text-muted-foreground tabular-nums">
           上次更新：{prefs.updatedAt.slice(0, 10)}
         </span>
       </div>

@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
-import { JobCard } from '@/components/JobCard'
+import { useNavigate } from 'react-router-dom'
+import { Inbox } from 'lucide-react'
+import { EmptyState } from '@/components/EmptyState'
+import { JobRow } from '@/components/JobRow'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useRepository } from '@/lib/repository'
 import type { FeedbackAction, JobStatus, JobWithStatus } from '@/types'
@@ -15,6 +18,7 @@ const tabs: { value: TabValue; label: string }[] = [
 
 export default function JobsPage() {
   const repo = useRepository()
+  const navigate = useNavigate()
   const [tab, setTab] = useState<TabValue>('all')
   const [jobs, setJobs] = useState<JobWithStatus[]>([])
 
@@ -34,27 +38,41 @@ export default function JobsPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">岗位流</h1>
-        <span className="text-sm text-muted-foreground">共 {jobs.length} 条</span>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <Tabs value={tab} onValueChange={(v) => setTab(v as TabValue)}>
+          <TabsList>
+            {tabs.map((t) => (
+              <TabsTrigger key={t.value} value={t.value}>
+                {t.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
+        <span className="text-sm text-muted-foreground tabular-nums">共 {jobs.length} 条</span>
       </div>
 
-      <Tabs value={tab} onValueChange={(v) => setTab(v as TabValue)}>
-        <TabsList>
-          {tabs.map((t) => (
-            <TabsTrigger key={t.value} value={t.value}>
-              {t.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-      </Tabs>
-
       {jobs.length === 0 ? (
-        <p className="py-16 text-center text-sm text-muted-foreground">该状态下暂无岗位</p>
+        tab === 'all' ? (
+          <EmptyState
+            icon={Inbox}
+            title="暂无岗位"
+            description="采集器接入后，匹配岗位会出现在这里。先去设置好筛选偏好。"
+            actionLabel="去设置偏好"
+            onAction={() => navigate('/preferences')}
+          />
+        ) : (
+          <EmptyState
+            icon={Inbox}
+            title={`没有「${tabs.find((t) => t.value === tab)?.label}」状态的岗位`}
+            description="标记反馈后，岗位会进入对应状态分组。"
+            actionLabel="查看全部岗位"
+            onAction={() => setTab('all')}
+          />
+        )
       ) : (
-        <div className="space-y-3">
+        <div className="rounded-lg border bg-card [&>*+*]:border-t-[0.5px] [&>*+*]:border-border">
           {jobs.map((job) => (
-            <JobCard key={job.id} job={job} onFeedback={handleFeedback} />
+            <JobRow key={job.id} job={job} onFeedback={handleFeedback} />
           ))}
         </div>
       )}

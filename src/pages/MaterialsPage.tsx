@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Check, Pencil, Plus, Trash2 } from 'lucide-react'
+import { Check, FolderOpen, Pencil, Plus, Trash2 } from 'lucide-react'
+import { EmptyState } from '@/components/EmptyState'
 import { MaterialForm } from '@/components/MaterialForm'
 import {
   AlertDialog,
@@ -111,7 +112,7 @@ export default function MaterialsPage() {
           ))}
         </div>
 
-        {m.metrics && <p className="text-sm text-emerald-700">{m.metrics}</p>}
+        {m.metrics && <p className="text-sm font-medium text-status-interested">{m.metrics}</p>}
         {m.content && (
           <p className="line-clamp-2 text-sm whitespace-pre-wrap text-muted-foreground">
             {m.content}
@@ -123,24 +124,6 @@ export default function MaterialsPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h1 className="text-xl font-semibold">素材库</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            一行一个故事，共 {materials.length} 个故事
-          </p>
-        </div>
-        <Button
-          onClick={() => {
-            setEditing(null)
-            setFormOpen(true)
-          }}
-        >
-          <Plus className="size-4" />
-          新建故事
-        </Button>
-      </div>
-
       <div className="flex flex-wrap items-center gap-2">
         <Select value={capFilter} onValueChange={(v) => setCapFilter(v as string)}>
           <SelectTrigger className="w-44">
@@ -159,10 +142,30 @@ export default function MaterialsPage() {
           {grouped && <Check className="size-4" />}
           按项目分组
         </Button>
+        <span className="text-sm text-muted-foreground tabular-nums">共 {materials.length} 个故事</span>
+        <div className="flex-1" />
+        <Button
+          onClick={() => {
+            setEditing(null)
+            setFormOpen(true)
+          }}
+        >
+          <Plus className="size-4" />
+          新建故事
+        </Button>
       </div>
 
       {filtered.length === 0 ? (
-        <p className="py-16 text-center text-sm text-muted-foreground">暂无故事，点击右上角新建</p>
+        <EmptyState
+          icon={FolderOpen}
+          title={capFilter === ALL ? '暂无故事' : `「${capFilter}」能力域下暂无故事`}
+          description="把项目经历拆成一个可讲的故事，面试时随取随用。"
+          actionLabel="新建故事"
+          onAction={() => {
+            setEditing(null)
+            setFormOpen(true)
+          }}
+        />
       ) : grouped ? (
         <div className="space-y-6">
           {groups.map(([project, items]) => (
