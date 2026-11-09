@@ -12,11 +12,17 @@
 
 ## 运行
 
+要求 **Node.js ≥ 22**（Vite 8 需要 `^20.19 || >=22.12`，本项目统一按 Node ≥ 22 标注；低版本 Node 20 会出现引擎警告）。
+
 ```bash
 npm install
 npm run dev      # 开发
 npm run build    # 类型检查 + 生产构建
 ```
+
+### 部署说明
+
+静态托管时需配置 SPA fallback：所有路由 rewrite 到 `/index.html`（否则刷新 `/jobs` 等子路由会 404）。
 
 ## 架构
 
