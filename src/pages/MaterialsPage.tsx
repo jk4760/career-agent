@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ChevronDown, FolderOpen, Pencil, Plus, Search, Trash2 } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ChevronDown, Download, FolderOpen, Paperclip, Pencil, Plus, Search, Trash2, Upload } from 'lucide-react'
 import { EmptyState } from '@/components/EmptyState'
 import { MarkdownContent } from '@/components/MarkdownContent'
 import { MaterialForm } from '@/components/MaterialForm'
@@ -15,9 +15,43 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { deriveImportDraft, formatFileSize, parseImportFile, type ImportDraft } from '@/lib/fileImport'
 import { useRepository } from '@/lib/repository'
 import { cn } from '@/lib/utils'
-import type { Material } from '@/types'
+import type { AttachmentMeta, Material } from '@/types'
+
+/** 附件行：文件名 + 大小 + 下载（浏览器端保存原文件；本体丢失时提示重新导入） */
+function AttachmentRow({ materialId, meta }: { materialId: string; meta: AttachmentMeta }) {
+  const repo = useRepository()
+  const [missing, setMissing] = useState(false)
+
+  const download = async () => {
+    const file = await repo.getAttachmentFile(materialId, meta.name)
+    if (!file) {
+      setMissing(true)
+      return
+    }
+    const url = URL.createObjectURL(file)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = meta.name
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-xs">
+      <Paperclip className="size-3.5 text-muted-foreground" />
+      <span>{meta.name}</span>
+      <span className="text-muted-foreground tabular-nums">{formatFileSize(meta.size)}</span>
+      <Button variant="ghost" size="xs" onClick={download}>
+        <Download className="size-3.5" />
+        下载
+      </Button>
+      {missing && <span className="text-status-new">刷新后文件本体已丢失，请重新导入</span>}
+    </div>
+  )
+}
 
 /**
  * 素材库（§10.7 树状大纲/站点图式）：
@@ -35,6 +69,10 @@ export default function MaterialsPage() {
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<Material | null>(null)
   const [prefillFacet, setPrefillFacet] = useState<string | null>(null)
+  const [importDraft, setImportDraft] = useState<ImportDraft | null>(null)
+  const [importFile, setImportFile] = useState<File | null>(null)
+  const [importError, setImportError] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [addingFacet, setAddingFacet] = useState(false)
   const [facetDraft, setFacetDraft] = useState('')
   const [deleting, setDeleting] = useState<Material | null>(null)
@@ -74,8 +112,30 @@ export default function MaterialsPage() {
 
   // 变更后无需手动 reload：repo 随 App 状态更新生成新实例，
   // 上面的 effect 会随之重新拉取（手动 reload 反而会用过期闭包覆盖新数据）
-  const handleSave = async (material: Material) => {
-    await repo.saveMaterial(material)
+  const handleSave = async (material: Material, file?: File) => {
+    const saved = await repo.saveMaterial(material)
+    // 导入路径：原文件本体挂为故事附件（元信息已在 attachments 中）
+    if (file) await repo.putAttachmentFile(saved.id, file)
+    setImportDraft(null)
+    setImportFile(null)
+  }
+
+  // 「导入文件」（§10.9）：本地解析 .md/.docx/.pdf，启发式预填抽屉表单
+  const onFileChosen = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setImportError(null)
+    try {
+      const { text } = await parseImportFile(file)
+      setEditing(null)
+      setPrefillFacet(null)
+      setImportDraft(deriveImportDraft(text))
+      setImportFile(file)
+      setFormOpen(true)
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : '文件解析失败')
+    }
   }
 
   const handleDelete = async () => {
@@ -112,6 +172,8 @@ export default function MaterialsPage() {
     if (!v) return
     setEditing(null)
     setPrefillFacet(v)
+    setImportDraft(null)
+    setImportFile(null)
     setFormOpen(true)
   }
 
@@ -164,9 +226,34 @@ export default function MaterialsPage() {
         <span className="shrink-0 text-sm text-muted-foreground tabular-nums">
           共 {storyCount} 个故事
         </span>
+        {/* 导入文件（次按钮）与新建故事（主按钮）并列（§10.9） */}
+        <Button variant="outline" className="shrink-0" onClick={() => fileInputRef.current?.click()}>
+          <Upload className="size-4" />
+          导入文件
+        </Button>
+        <Button
+          className="shrink-0"
+          onClick={() => {
+            setEditing(null)
+            setPrefillFacet(null)
+            setImportDraft(null)
+            setImportFile(null)
+            setFormOpen(true)
+          }}
+        >
+          <Plus className="size-4" />
+          新建故事
+        </Button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".md,.docx,.pdf"
+          className="hidden"
+          onChange={onFileChosen}
+        />
       </div>
 
-      {/* 第二行：搜索框（title / tags / facets / content 子串匹配，不区分大小写）+ 新建按钮 */}
+      {/* 第二行：搜索框（title / tags / facets / content 子串匹配，不区分大小写） */}
       <div className="flex items-center gap-2">
         <div className="relative w-full max-w-sm">
           <Search className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -177,17 +264,7 @@ export default function MaterialsPage() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <div className="flex-1" />
-        <Button
-          onClick={() => {
-            setEditing(null)
-            setPrefillFacet(null)
-            setFormOpen(true)
-          }}
-        >
-          <Plus className="size-4" />
-          新建故事
-        </Button>
+        {importError && <span className="text-xs text-destructive">{importError}</span>}
       </div>
 
       {groups.length === 0 ? (
@@ -211,6 +288,8 @@ export default function MaterialsPage() {
             onAction={() => {
               setEditing(null)
               setPrefillFacet(null)
+              setImportDraft(null)
+              setImportFile(null)
               setFormOpen(true)
             }}
           />
@@ -306,6 +385,14 @@ export default function MaterialsPage() {
                                   {m.tags.map((t) => `#${t}`).join('  ')}
                                 </p>
                               )}
+                              {/* 附件行（§10.9）：文件名 + 大小 + 下载 */}
+                              {m.attachments.length > 0 && (
+                                <div className="mt-3 space-y-1.5 border-t-[0.5px] border-border pt-2.5">
+                                  {m.attachments.map((a) => (
+                                    <AttachmentRow key={a.name} materialId={m.id} meta={a} />
+                                  ))}
+                                </div>
+                              )}
                               <div className="mt-3 flex gap-2">
                                 <Button
                                   size="sm"
@@ -313,6 +400,8 @@ export default function MaterialsPage() {
                                   onClick={() => {
                                     setEditing(m)
                                     setPrefillFacet(null)
+                                    setImportDraft(null)
+                                    setImportFile(null)
                                     setFormOpen(true)
                                   }}
                                 >
@@ -340,6 +429,8 @@ export default function MaterialsPage() {
         open={formOpen}
         initial={editing}
         prefillFacet={prefillFacet}
+        importDraft={importDraft}
+        importFile={importFile}
         onOpenChange={setFormOpen}
         onSave={handleSave}
       />

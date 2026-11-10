@@ -61,6 +61,7 @@ CREATE TABLE materials (
   facets        TEXT[],                      -- 经历/公司标签（自由文本、不分类型，如 {"互联网","字节跳动"}）；chips 由该字段派生
   metrics       TEXT,                        -- 量化成果，一两个即可
   content       TEXT,                        -- markdown，自由结构（不强制 STAR 四段）
+  attachments   JSONB,                       -- 附件 [{name, size, mime, imported_at}]；导入文件自动挂载（10.9）
   others        JSONB,                       -- 以备不时之需
   updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE(project, title)

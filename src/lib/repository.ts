@@ -32,6 +32,15 @@ export interface Repository {
 
   listQuestions(): Promise<InterviewQuestion[]>
   saveQuestion(question: InterviewQuestion): Promise<InterviewQuestion>
+  deleteQuestion(id: string): Promise<void>
+
+  /**
+   * 附件本体存取（10.9）：attachments 元信息随 saveMaterial 写入，
+   * 文件本体由这两个方法单独存取。内存实现仅存会话内变量，刷新后丢失；
+   * M2 接后端 + 对象存储后替换实现。
+   */
+  putAttachmentFile(materialId: string, file: File): Promise<void>
+  getAttachmentFile(materialId: string, name: string): Promise<File | null>
 
   getPreferences(): Promise<Preferences>
   savePreferences(preferences: Preferences): Promise<Preferences>

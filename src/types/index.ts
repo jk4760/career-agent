@@ -54,6 +54,14 @@ export interface Preferences {
   updatedAt: string
 }
 
+/** 附件元信息（10.9）；文件本体在内存实现中仅存于会话，刷新后丢失 */
+export interface AttachmentMeta {
+  name: string
+  size: number
+  mime: string
+  importedAt: string
+}
+
 /** 素材库条目：一行 = 一个可讲的故事 */
 export interface Material {
   id: string
@@ -69,6 +77,7 @@ export interface Material {
   metrics: string | null
   /** markdown，自由结构（不强制 STAR 四段） */
   content: string | null
+  attachments: AttachmentMeta[]
   others: Record<string, unknown> | null
   updatedAt: string
 }

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type {
   FeedbackAction,
   FeedbackEvent,
@@ -204,6 +204,7 @@ const seedMaterials: Material[] = [
     metrics: '报表人力成本下降 60%，核心指标口径统一至 42 个',
     content:
       '## 背景\n业务高速增长期，各团队指标口径混乱，同一份 GMV 有三个数字。\n\n## 过程\n梳理业务流程，与 6 个业务方逐一对齐口径，按 OSM 模型拆解出三级指标体系，落地到统一看板。\n\n## 结果\n口径统一后，经营例会效率明显提升，临时取数需求下降七成。',
+    attachments: [],
     others: null,
     updatedAt: '2026-10-20T08:00:00Z',
   },
@@ -220,6 +221,7 @@ const seedMaterials: Material[] = [
     metrics: 'GMV 预估偏差 25% → 8%',
     content:
       '## 背景\n双 11 备货依赖 GMV 预估，往年偏差高达 25%。\n\n## 过程\n拆解偏差来源，发现主要误差来自新客贡献；引入分渠道滚动预测，每 6 小时校准一次。\n\n## 结果\n最终偏差收敛到 8%，备货损耗显著下降。',
+    attachments: [],
     others: null,
     updatedAt: '2026-10-20T08:00:00Z',
   },
@@ -236,6 +238,7 @@ const seedMaterials: Material[] = [
     metrics: '付费转化率 +18%，次月留存 +6pp',
     content:
       '## 背景\n会员增长停滞，粗放式补贴 ROI 持续走低。\n\n## 过程\n按 RFM 模型把用户分为 5 层，针对高潜力层设计定向权益包，A/B 实验验证后全量。\n\n## 结果\n付费转化率提升 18%，补贴费用反而下降 12%。',
+    attachments: [],
     others: null,
     updatedAt: '2026-10-21T08:00:00Z',
   },
@@ -252,6 +255,7 @@ const seedMaterials: Material[] = [
     metrics: 'push 打开率 2.1% → 4.3%',
     content:
       '## 背景\npush 打开率长期低于行业均值。\n\n## 过程\n从发送时段、文案个性化、频控策略三个维度做实验矩阵，逐步全量最优组合。\n\n## 结果\n打开率翻倍，且卸载率没有上升。',
+    attachments: [],
     others: null,
     updatedAt: '2026-10-21T08:00:00Z',
   },
@@ -268,6 +272,7 @@ const seedMaterials: Material[] = [
     metrics: '人工客服工单量下降 35%，首解率 82%',
     content:
       '## 背景\n客服团队 60% 工单是重复问题。\n\n## 过程\n基于 RAG 架构搭建知识库问答机器人，设计评测集持续优化召回质量，灰度上线后迭代三轮。\n\n## 结果\n工单量下降 35%，机器人首解率达到 82%。',
+    attachments: [],
     others: null,
     updatedAt: '2026-10-22T08:00:00Z',
   },
@@ -360,15 +365,42 @@ function withStatus(job: Job, events: FeedbackEvent[]): JobWithStatus {
 // ---------- 内存实现 ----------
 
 /**
- * 内存版 Repository：数据保存在 React state 中，仅用于骨架阶段。
+ * 素材库 localStorage 持久化（v0.5 起）：
+ * - key 带数据结构版本号，版本不匹配（旧 key 不存在/数据形状不符）时自动重置为种子数据
+ * - 其余模块（岗位/问题/偏好）维持纯内存，刷新即重置
+ * - M2 迁 Postgres 后删除此机制
+ */
+const MATERIALS_STORAGE_KEY = 'nextcareer.materials.v1'
+
+function loadMaterials(): Material[] {
+  try {
+    const raw = localStorage.getItem(MATERIALS_STORAGE_KEY)
+    if (!raw) return seedMaterials
+    const parsed: unknown = JSON.parse(raw)
+    if (!Array.isArray(parsed) || parsed.some((m) => !m?.id || !m?.project)) return seedMaterials
+    return parsed as Material[]
+  } catch {
+    return seedMaterials
+  }
+}
+
+/**
+ * 内存版 Repository：数据保存在 React state 中（素材库额外写穿 localStorage）。
  * M2 将用 Postgres 实现替换（见 README）。
  */
 export function useMemoryRepository(): Repository {
   const [jobs] = useState<Job[]>(seedJobs)
   const [feedbackEvents, setFeedbackEvents] = useState<FeedbackEvent[]>(seedFeedbackEvents)
-  const [materials, setMaterials] = useState<Material[]>(seedMaterials)
+  const [materials, setMaterials] = useState<Material[]>(loadMaterials)
   const [questions, setQuestions] = useState<InterviewQuestion[]>(seedQuestions)
   const [preferences, setPreferences] = useState<Preferences>(seedPreferences)
+  // 附件本体：materialId → (fileName → File)。仅存会话内变量，刷新后丢失（见 README）
+  const attachmentBlobs = useRef(new Map<string, Map<string, File>>())
+
+  // 素材库写穿 localStorage（仅本机本浏览器）
+  useEffect(() => {
+    localStorage.setItem(MATERIALS_STORAGE_KEY, JSON.stringify(materials))
+  }, [materials])
 
   const repo = useMemo<Repository>(
     () => ({
@@ -424,6 +456,18 @@ export function useMemoryRepository(): Repository {
         setQuestions((prev) =>
           prev.map((q) => (q.linkedMaterialId === id ? { ...q, linkedMaterialId: null } : q)),
         )
+        // 清理附件本体
+        attachmentBlobs.current.delete(id)
+      },
+
+      async putAttachmentFile(materialId: string, file: File) {
+        const byName = attachmentBlobs.current.get(materialId) ?? new Map<string, File>()
+        byName.set(file.name, file)
+        attachmentBlobs.current.set(materialId, byName)
+      },
+
+      async getAttachmentFile(materialId: string, name: string) {
+        return attachmentBlobs.current.get(materialId)?.get(name) ?? null
       },
 
       async listQuestions() {
@@ -437,6 +481,10 @@ export function useMemoryRepository(): Repository {
           return exists ? prev.map((q) => (q.id === saved.id ? saved : q)) : [...prev, saved]
         })
         return saved
+      },
+
+      async deleteQuestion(id: string) {
+        setQuestions((prev) => prev.filter((q) => q.id !== id))
       },
 
       async getPreferences() {
