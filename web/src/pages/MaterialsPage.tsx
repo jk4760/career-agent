@@ -16,39 +16,23 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { deriveImportDraft, formatFileSize, parseImportFile, type ImportDraft } from '@/lib/fileImport'
+import { API_BASE } from '@/lib/apiRepository'
 import { useRepository } from '@/lib/repository'
 import { cn } from '@/lib/utils'
 import type { AttachmentMeta, Material } from '@/types'
 
-/** 附件行：文件名 + 大小 + 下载（浏览器端保存原文件；本体丢失时提示重新导入） */
+/** 附件行：文件名 + 大小 + 下载（走 API 端点，Basic Auth 由浏览器会话携带） */
 function AttachmentRow({ materialId, meta }: { materialId: string; meta: AttachmentMeta }) {
-  const repo = useRepository()
-  const [missing, setMissing] = useState(false)
-
-  const download = async () => {
-    const file = await repo.getAttachmentFile(materialId, meta.name)
-    if (!file) {
-      setMissing(true)
-      return
-    }
-    const url = URL.createObjectURL(file)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = meta.name
-    a.click()
-    URL.revokeObjectURL(url)
-  }
-
+  const href = `${API_BASE}/materials/${materialId}/attachments/${encodeURIComponent(meta.name)}/download`
   return (
     <div className="flex flex-wrap items-center gap-2 text-xs">
       <Paperclip className="size-3.5 text-muted-foreground" />
       <span>{meta.name}</span>
       <span className="text-muted-foreground tabular-nums">{formatFileSize(meta.size)}</span>
-      <Button variant="ghost" size="xs" onClick={download}>
+      <Button variant="ghost" size="xs" render={<a href={href} />}>
         <Download className="size-3.5" />
         下载
       </Button>
-      {missing && <span className="text-status-new">刷新后文件本体已丢失，请重新导入</span>}
     </div>
   )
 }

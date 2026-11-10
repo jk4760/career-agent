@@ -2,8 +2,8 @@ import { BrowserRouter, NavLink, Navigate, Route, Routes, useLocation } from 're
 import { Briefcase, FolderOpen, MessagesSquare, Settings, Settings2 } from 'lucide-react'
 import { AssistantPanel } from '@/components/AssistantPanel'
 import { LogoMark } from '@/components/LogoMark'
-import { useMemoryRepository } from '@/lib/memoryRepository'
 import { RepositoryContext } from '@/lib/repository'
+import { useApiRepository } from '@/lib/useApiRepository'
 import AISettingsPage from '@/pages/AISettingsPage'
 import JobsPage from '@/pages/JobsPage'
 import MaterialsPage from '@/pages/MaterialsPage'
@@ -39,7 +39,8 @@ function Header() {
 }
 
 export default function App() {
-  const repository = useMemoryRepository()
+  // M2：Repository 切换为 API 实现（Postgres + Hono），内存实现已退役
+  const repository = useApiRepository()
 
   return (
     <RepositoryContext.Provider value={repository}>

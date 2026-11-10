@@ -1,0 +1,47 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-nextcareer}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      POSTGRES_DB: ${DB_NAME:-nextcareer}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    # 不暴露端口：数据库仅 compose 内网可达（验收清单第 8 条）
+
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://${DB_USER:-nextcareer}:${DB_PASSWORD}@db:5432/${DB_NAME:-nextcareer}
+      UPLOAD_DIR: /var/lib/nextcareer/uploads
+    volumes:
+      - uploads:/var/lib/nextcareer/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+    restart: unless-stopped
+    ports:
+      - '${WEB_PORT:-80}:80'
+    environment:
+      AUTH_USER: ${AUTH_USER:?AUTH_USER is required}
+      AUTH_PASS: ${AUTH_PASS:?AUTH_PASS is required}
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
+  uploads:
