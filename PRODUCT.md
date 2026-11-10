@@ -33,7 +33,7 @@ web
 
 ## Brand Commitments
 
-- 产品名固定为 **Career Agent**，不可更改。
+- 产品名固定为 **NextCareer**（v0.5 起，原 Career Agent；Git 仓库名 `career-agent` 不变），不可更改。Logo = 折线 N（见开工上下文 10.8），侧栏副标题「Jackie 的个人工作台」。
 - UI 语言必须为中文，硬约束。
 
 ## Evidence on Hand
