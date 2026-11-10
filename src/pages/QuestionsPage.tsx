@@ -1,5 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { MessagesSquare, Star } from 'lucide-react'
+import { MessagesSquare, Plus, Trash2 } from 'lucide-react'
+import { ConfidenceStars, QuestionForm } from '@/components/QuestionForm'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -18,6 +29,8 @@ import { QUESTION_CATEGORIES, type InterviewQuestion, type Material } from '@/ty
 const NONE = '__none__'
 
 interface Draft {
+  question: string
+  category: string
   answerDraft: string
   linkedMaterialId: string
   confidence: number | null
@@ -31,6 +44,8 @@ export default function QuestionsPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
   const [saved, setSaved] = useState(false)
+  const [formOpen, setFormOpen] = useState(false)
+  const [deleting, setDeleting] = useState<InterviewQuestion | null>(null)
 
   const reload = useCallback(async () => {
     const [qs, ms] = await Promise.all([repo.listQuestions(), repo.listMaterials()])
@@ -68,6 +83,8 @@ export default function QuestionsPage() {
       return
     }
     setDraft({
+      question: selected.question,
+      category: selected.category ?? '其他',
       answerDraft: selected.answerDraft ?? '',
       linkedMaterialId: selected.linkedMaterialId ?? NONE,
       confidence: selected.confidence,
@@ -76,17 +93,33 @@ export default function QuestionsPage() {
 
   const unlinkedCount = questions.filter((q) => !q.linkedMaterialId).length
 
+  // 变更后无需手动 reload：repo 随 App 状态更新生成新实例，effect 会自动重取
   const handleSave = async () => {
-    if (!selected || !draft) return
+    if (!selected || !draft || !draft.question.trim()) return
     await repo.saveQuestion({
       ...selected,
+      question: draft.question.trim(),
+      category: draft.category,
       answerDraft: draft.answerDraft.trim() || null,
       linkedMaterialId: draft.linkedMaterialId === NONE ? null : draft.linkedMaterialId,
       confidence: draft.confidence,
     })
-    // 列表由 effect 随 repo 更新自动刷新，这里只做保存反馈
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
+  }
+
+  const handleCreate = async (question: InterviewQuestion) => {
+    await repo.saveQuestion(question)
+    setActiveCategory(question.category ?? '其他')
+    setSelectedId(question.id)
+  }
+
+  const handleDelete = async () => {
+    if (!deleting) return
+    const wasSelected = deleting.id === selectedId
+    await repo.deleteQuestion(deleting.id)
+    if (wasSelected) setSelectedId(null)
+    setDeleting(null)
   }
 
   return (
@@ -103,8 +136,12 @@ export default function QuestionsPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-[260px_1fr]">
-        {/* 左栏：分类 + 问题列表 */}
+        {/* 左栏：新增 + 分类 + 问题列表 */}
         <div className="space-y-3">
+          <Button className="w-full" onClick={() => setFormOpen(true)}>
+            <Plus className="size-4" />
+            新增问题
+          </Button>
           <div className="flex flex-wrap gap-1.5 md:flex-col md:items-stretch">
             {QUESTION_CATEGORIES.map((c) => {
               const count = byCategory.get(c)?.length ?? 0
@@ -134,28 +171,38 @@ export default function QuestionsPage() {
               </div>
             )}
             {visibleQuestions.map((q) => (
-              <button
-                key={q.id}
-                type="button"
-                onClick={() => setSelectedId(q.id)}
-                className={`w-full cursor-pointer rounded-md px-2 py-1.5 text-left text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50 ${
-                  q.id === selectedId
-                    ? 'bg-accent font-medium text-accent-foreground'
-                    : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-                }`}
-              >
-                <span className="line-clamp-2">{q.question}</span>
-                {!q.linkedMaterialId && (
-                  <span className="mt-0.5 inline-block rounded bg-status-new/10 px-1 text-xs text-status-new">
-                    未关联故事
-                  </span>
-                )}
-              </button>
+              <div key={q.id} className="group relative">
+                <button
+                  type="button"
+                  onClick={() => setSelectedId(q.id)}
+                  className={`w-full cursor-pointer rounded-md px-2 py-1.5 text-left text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50 ${
+                    q.id === selectedId
+                      ? 'bg-secondary font-medium'
+                      : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                  }`}
+                >
+                  <span className="line-clamp-2 pr-6">{q.question}</span>
+                  {!q.linkedMaterialId && (
+                    <span className="mt-0.5 inline-block rounded bg-status-new/10 px-1 text-xs text-status-new">
+                      未关联故事
+                    </span>
+                  )}
+                </button>
+                {/* hover 显示删除图标（§10.10） */}
+                <button
+                  type="button"
+                  aria-label={`删除问题：${q.question}`}
+                  className="absolute top-1.5 right-1 cursor-pointer rounded p-1 text-muted-foreground opacity-0 transition-opacity outline-none group-hover:opacity-100 hover:bg-muted hover:text-destructive focus-visible:opacity-100 focus-visible:ring-3 focus-visible:ring-ring/50"
+                  onClick={() => setDeleting(q)}
+                >
+                  <Trash2 className="size-3.5" />
+                </button>
+              </div>
             ))}
           </div>
         </div>
 
-        {/* 右栏：问题详情编辑 */}
+        {/* 右栏：问题详情（详情区即编辑区，§10.10） */}
         <div className="min-w-0 rounded-lg border bg-card p-4">
           {!selected || !draft ? (
             <div className="flex flex-col items-center justify-center gap-1.5 py-16 text-center">
@@ -164,11 +211,40 @@ export default function QuestionsPage() {
             </div>
           ) : (
             <div className="space-y-4">
-              <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  {selected.category && <Badge variant="outline">{selected.category}</Badge>}
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1fr_180px]">
+                <div className="space-y-1.5">
+                  <Label htmlFor="q-text">问题</Label>
+                  <Textarea
+                    id="q-text"
+                    rows={2}
+                    value={draft.question}
+                    onChange={(e) => {
+                      setDraft({ ...draft, question: e.target.value })
+                      setSaved(false)
+                    }}
+                  />
                 </div>
-                <h2 className="mt-2 text-[15px] font-medium">{selected.question}</h2>
+                <div className="space-y-1.5">
+                  <Label>分类</Label>
+                  <Select
+                    value={draft.category}
+                    onValueChange={(v) => {
+                      setDraft({ ...draft, category: v as string })
+                      setSaved(false)
+                    }}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {QUESTION_CATEGORIES.map((c) => (
+                        <SelectItem key={c} value={c}>
+                          {c}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
 
               <div className="space-y-1.5">
@@ -216,37 +292,19 @@ export default function QuestionsPage() {
 
               <div className="space-y-1.5">
                 <Label>把握度</Label>
-                <div className="flex items-center gap-1">
-                  {[1, 2, 3, 4, 5].map((n) => (
-                    <button
-                      key={n}
-                      type="button"
-                      className="cursor-pointer rounded-md p-3 outline-none focus-visible:ring-3 focus-visible:ring-ring/50 sm:p-0.5"
-                      onClick={() => {
-                        setDraft({
-                          ...draft,
-                          confidence: draft.confidence === n ? null : n,
-                        })
-                        setSaved(false)
-                      }}
-                    >
-                      <Star
-                        className={`size-5 ${
-                          draft.confidence !== null && n <= draft.confidence
-                            ? 'fill-amber-400 text-amber-400'
-                            : 'text-muted-foreground/40'
-                        }`}
-                      />
-                    </button>
-                  ))}
-                  <span className="ml-2 text-sm text-muted-foreground">
-                    {draft.confidence ? `${draft.confidence}/5` : '未评估'}
-                  </span>
-                </div>
+                <ConfidenceStars
+                  value={draft.confidence}
+                  onChange={(v) => {
+                    setDraft({ ...draft, confidence: v })
+                    setSaved(false)
+                  }}
+                />
               </div>
 
               <div className="flex items-center gap-3">
-                <Button onClick={handleSave}>保存</Button>
+                <Button onClick={handleSave} disabled={!draft.question.trim()}>
+                  保存
+                </Button>
                 {saved && <span className="text-sm font-medium text-status-interested">已保存</span>}
                 <span className="text-xs text-muted-foreground">
                   上次更新：{selected.updatedAt.slice(0, 10)}
@@ -256,6 +314,33 @@ export default function QuestionsPage() {
           )}
         </div>
       </div>
+
+      <QuestionForm
+        open={formOpen}
+        materials={materials}
+        onOpenChange={setFormOpen}
+        onSave={handleCreate}
+      />
+
+      <AlertDialog
+        open={deleting !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleting(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认删除这个问题？</AlertDialogTitle>
+            <AlertDialogDescription>
+              「{deleting?.question}」删除后不可恢复，其与故事的关联关系随之消失。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete}>删除</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
