@@ -36,9 +36,11 @@ src/
 │   ├── repository.ts        # Repository 接口 + Context/Hook
 │   ├── memoryRepository.ts  # 内存实现 + 假数据（10 条岗位等）
 │   └── fileImport.ts        # 素材导入：.md/.docx/.pdf 本地解析 + 启发式预填
-├── components/          # LogoMark、JobRow、StatusBadge、FeedbackDialog、MaterialForm（抽屉）、QuestionForm、ui/(shadcn)
-└── pages/               # JobsPage / MaterialsPage / QuestionsPage / AssistantPage / PreferencesPage
+├── components/          # LogoMark、AssistantPanel、JobRow、StatusBadge、FeedbackDialog、MaterialForm（抽屉）、QuestionForm、ui/(shadcn)
+└── pages/               # JobsPage / MaterialsPage / QuestionsPage / AISettingsPage / PreferencesPage
 ```
+
+布局为全局三栏：左侧导航（232px）｜主内容区｜右侧 AI 助手面板（224px，所有页面共享，可收起为 30px 竖条）。AI 助手不是导航项；「AI 对话管理」页（`/ai-settings`）配置模型服务，面板模型下拉即时联动。
 
 ### 数据访问层（可替换设计）
 
@@ -48,7 +50,8 @@ src/
 
 ### 附件与持久化（重要）
 
-- **素材库（materials）持久化在浏览器 localStorage**（仅本机本浏览器，key 带数据结构版本号，版本不匹配自动重置为种子数据）；其余模块（岗位/问题/偏好）为纯内存，刷新即重置。M2 迁 Postgres 后统一由数据库接管。
+- **素材库（materials）与 AI 对话配置（aiSettings）持久化在浏览器 localStorage**（仅本机本浏览器，key 带数据结构版本号，版本不匹配自动重置为种子数据）；其余模块（岗位/问题/偏好）为纯内存，刷新即重置。M2 迁 Postgres 后统一由数据库接管。
+- AI 对话配置的 **API Key 仅保存在本机浏览器 localStorage，不提交任何服务器**；M5 起改由后端代理调用。
 - 素材库支持导入 .md / .docx / .pdf 并挂为故事附件。**文件本体只存于会话内变量**：刷新页面后故事与附件元信息（文件名/大小）仍在，但文件本体丢失，点下载会提示重新导入。M2 接后端 + 对象存储后解决。
 
 ### 数据模型要点
@@ -64,8 +67,10 @@ src/
 | `/jobs` | 岗位流：状态筛选 tab、行式列表展开详情、感兴趣/不合适/已投递反馈（可附一句话 comment） |
 | `/materials` | 素材库：facet chips + 搜索 + 项目树状大纲，markdown 渲染，文件导入（.md/.docx/.pdf）与附件下载，新建/编辑抽屉表单，删除二次确认 |
 | `/questions` | 问题库：新增问题表单、详情区即编辑区（问题/分类/草稿/关联故事/把握度）、列表 hover 删除（二次确认），未关联计数提醒 |
-| `/assistant` | AI 助手：会话列表 + 对话区 UI 骨架（真实对话能力 M5 上线，发送禁用） |
+| `/ai-settings` | AI 对话管理：API 地址 / API Key / 模型列表 chips，保存后面板模型下拉立即联动 |
 | `/preferences` | 偏好设置：行业/职能/城市/薪资底线/包含排除关键词，保存即生效 |
+
+右侧常驻 **AI 助手面板**：头部模型下拉 + 收起/展开（30px 竖条），消息气泡与输入区样式已定稿，真实对话能力 M5 上线。
 
 ## 里程碑
 

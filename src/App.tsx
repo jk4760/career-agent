@@ -1,9 +1,10 @@
 import { BrowserRouter, NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom'
-import { Briefcase, FolderOpen, MessagesSquare, Settings, Sparkles } from 'lucide-react'
+import { Briefcase, FolderOpen, MessagesSquare, Settings, Settings2 } from 'lucide-react'
+import { AssistantPanel } from '@/components/AssistantPanel'
 import { LogoMark } from '@/components/LogoMark'
 import { useMemoryRepository } from '@/lib/memoryRepository'
 import { RepositoryContext } from '@/lib/repository'
-import AssistantPage from '@/pages/AssistantPage'
+import AISettingsPage from '@/pages/AISettingsPage'
 import JobsPage from '@/pages/JobsPage'
 import MaterialsPage from '@/pages/MaterialsPage'
 import PreferencesPage from '@/pages/PreferencesPage'
@@ -13,8 +14,8 @@ const navItems = [
   { to: '/jobs', label: '岗位流', icon: Briefcase, desc: '查看 AI 采集的岗位，逐条标记反馈' },
   { to: '/materials', label: '素材库', icon: FolderOpen, desc: '一行一个可讲的故事，服务面试表达' },
   { to: '/questions', label: '问题库', icon: MessagesSquare, desc: '维护面试问题、回答草稿与关联故事' },
-  { to: '/assistant', label: 'AI 助手', icon: Sparkles, desc: '总结项目、改简历、备面试（M5 上线）' },
   { to: '/preferences', label: '偏好设置', icon: Settings, desc: '静态筛选条件，供采集匹配使用' },
+  { to: '/ai-settings', label: 'AI 对话管理', icon: Settings2, desc: '配置模型服务，对话面板自动联动' },
 ]
 
 function navLinkClass({ isActive }: { isActive: boolean }, extra = '') {
@@ -90,12 +91,15 @@ export default function App() {
                 <Route path="/jobs" element={<JobsPage />} />
                 <Route path="/materials" element={<MaterialsPage />} />
                 <Route path="/questions" element={<QuestionsPage />} />
-                <Route path="/assistant" element={<AssistantPage />} />
+                <Route path="/ai-settings" element={<AISettingsPage />} />
                 <Route path="/preferences" element={<PreferencesPage />} />
                 <Route path="*" element={<Navigate to="/jobs" replace />} />
               </Routes>
             </main>
           </div>
+
+          {/* 右侧 AI 助手面板（§6.6，全局所有页面共享，非导航项） */}
+          <AssistantPanel />
         </div>
       </BrowserRouter>
     </RepositoryContext.Provider>

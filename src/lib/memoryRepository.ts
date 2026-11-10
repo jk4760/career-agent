@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type {
+  AISettings,
   FeedbackAction,
   FeedbackEvent,
   InterviewQuestion,
@@ -372,6 +373,31 @@ function withStatus(job: Job, events: FeedbackEvent[]): JobWithStatus {
  */
 const MATERIALS_STORAGE_KEY = 'nextcareer.materials.v1'
 
+/** AI 对话配置（§7 豁免条款第二条）：localStorage 持久化，带版本号 */
+const AI_SETTINGS_STORAGE_KEY = 'nextcareer.ai-settings.v1'
+
+const defaultAISettings: AISettings = { baseUrl: '', apiKey: '', models: [] }
+
+function loadAISettings(): AISettings {
+  try {
+    const raw = localStorage.getItem(AI_SETTINGS_STORAGE_KEY)
+    if (!raw) return defaultAISettings
+    const parsed: unknown = JSON.parse(raw)
+    if (
+      typeof parsed !== 'object' ||
+      parsed === null ||
+      typeof (parsed as AISettings).baseUrl !== 'string' ||
+      typeof (parsed as AISettings).apiKey !== 'string' ||
+      !Array.isArray((parsed as AISettings).models)
+    ) {
+      return defaultAISettings
+    }
+    return parsed as AISettings
+  } catch {
+    return defaultAISettings
+  }
+}
+
 function loadMaterials(): Material[] {
   try {
     const raw = localStorage.getItem(MATERIALS_STORAGE_KEY)
@@ -394,6 +420,7 @@ export function useMemoryRepository(): Repository {
   const [materials, setMaterials] = useState<Material[]>(loadMaterials)
   const [questions, setQuestions] = useState<InterviewQuestion[]>(seedQuestions)
   const [preferences, setPreferences] = useState<Preferences>(seedPreferences)
+  const [aiSettings, setAISettings] = useState<AISettings>(loadAISettings)
   // 附件本体：materialId → (fileName → File)。仅存会话内变量，刷新后丢失（见 README）
   const attachmentBlobs = useRef(new Map<string, Map<string, File>>())
 
@@ -401,6 +428,11 @@ export function useMemoryRepository(): Repository {
   useEffect(() => {
     localStorage.setItem(MATERIALS_STORAGE_KEY, JSON.stringify(materials))
   }, [materials])
+
+  // AI 对话配置写穿 localStorage（API Key 仅本机存储，不提交任何服务器）
+  useEffect(() => {
+    localStorage.setItem(AI_SETTINGS_STORAGE_KEY, JSON.stringify(aiSettings))
+  }, [aiSettings])
 
   const repo = useMemo<Repository>(
     () => ({
@@ -496,8 +528,17 @@ export function useMemoryRepository(): Repository {
         setPreferences(saved)
         return saved
       },
+
+      async getAISettings() {
+        return aiSettings
+      },
+
+      async saveAISettings(s: AISettings) {
+        setAISettings(s)
+        return s
+      },
     }),
-    [jobs, feedbackEvents, materials, questions, preferences],
+    [jobs, feedbackEvents, materials, questions, preferences, aiSettings],
   )
   return repo
 }
