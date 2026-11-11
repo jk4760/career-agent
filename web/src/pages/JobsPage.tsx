@@ -23,7 +23,9 @@ export default function JobsPage() {
   const [jobs, setJobs] = useState<JobWithStatus[]>([])
 
   const reload = useCallback(async () => {
-    setJobs(await repo.listJobs(tab === 'all' ? undefined : tab))
+    const list = await repo.listJobs(tab === 'all' ? undefined : tab)
+    // 「全部」tab 排除「不合适」（纯前端过滤；反馈事件保留，「不合适」tab 完整不变）
+    setJobs(tab === 'all' ? list.filter((j) => j.status !== 'pass') : list)
   }, [repo, tab])
 
   useEffect(() => {

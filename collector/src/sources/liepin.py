@@ -134,10 +134,15 @@ def map_job_card(card: dict) -> dict | None:
 
 
 def parse_salary(s: str) -> tuple[int | None, int | None]:
-    """「15-30k·15薪」→ (15000, 30000)；「薪资面议」→ (None, None)。薪数信息不年化。"""
-    m = re.match(r"(\d+)\s*-\s*(\d+)\s*k", s.lower())
+    """「15-30k·15薪」→ (15000, 30000)；单值「25k」→ (25000, 25000)；「薪资面议」→ (None, None)。薪数信息不年化。"""
+    low = s.lower()
+    m = re.match(r"(\d+)\s*-\s*(\d+)\s*k", low)
     if m:
         return int(m.group(1)) * 1000, int(m.group(2)) * 1000
+    m = re.match(r"(\d+)\s*k", low)
+    if m:
+        v = int(m.group(1)) * 1000
+        return v, v
     return None, None
 
 

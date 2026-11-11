@@ -22,7 +22,8 @@ def print_report(
         f"过滤丢弃：{sum(filtered.values())}" + (f"（明细：{filtered}）" if filtered else ""),
         f"详情页配额用量：{detail_used}/{detail_cap}",
         f"临时限流（302）：{'是（本次提前停手）' if rate_limited else '否'}",
-        f"入库：新增 {ingest_result.get('inserted', 0)} / 重复跳过 {ingest_result.get('skipped', 0)}",
+        f"入库：新增 {ingest_result.get('inserted', 0)} / 重复跳过 {ingest_result.get('skipped', 0)}"
+        f" / 补回 JD {ingest_result.get('updated', 0)}",
         "==============================",
     ]
     for line in lines:

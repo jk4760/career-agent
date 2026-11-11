@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { desc, eq } from 'drizzle-orm'
+import { desc, eq, sql } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { feedbackEvents, jobs } from '../../../db/schema'
@@ -69,6 +69,7 @@ export const jobsRoute = new Hono()
   })
 
   // M3 采集器入库：按 dedup_key 幂等 upsert（仅 compose 内网调用）
+  // §5.5：冲突时仅当已存在记录 description 为空且本次携带非空 JD → 仅更新 description（其余字段不动）
   .post('/ingest', async (c) => {
     const parsed = ingestSchema.safeParse(await c.req.json())
     if (!parsed.success) return c.json({ error: parsed.error.issues }, 400)
@@ -80,12 +81,19 @@ export const jobsRoute = new Hono()
       postedAt: j.postedAt ?? null,
       dedupKey: createHash('md5').update(j.source + j.sourceUrl).digest('hex'),
     }))
-    const inserted = await db
+    // xmax = 0 → 本次新插入；xmax ≠ 0 → 走了 ON CONFLICT DO UPDATE（即补回 JD）
+    const rows = await db
       .insert(jobs)
       .values(values)
-      .onConflictDoNothing({ target: jobs.dedupKey })
-      .returning({ id: jobs.id })
-    return c.json({ inserted: inserted.length, skipped: values.length - inserted.length }, 201)
+      .onConflictDoUpdate({
+        target: jobs.dedupKey,
+        set: { description: sql`excluded.description` },
+        setWhere: sql`coalesce(${jobs.description}, '') = '' and excluded.description <> ''`,
+      })
+      .returning({ id: jobs.id, isInsert: sql<boolean>`(xmax = 0)` })
+    const inserted = rows.filter((r) => r.isInsert).length
+    const updated = rows.length - inserted
+    return c.json({ inserted, updated, skipped: values.length - rows.length }, 201)
   })
 
   // addFeedback(jobId, action, comment?)：追加式，不改写历史

@@ -28,6 +28,17 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://localhost:3001/api/jobs').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
 
   collector:
     # M3 采集器：手动触发，不默认启动
@@ -40,7 +51,8 @@ services:
     volumes:
       - ./collector/config.yaml:/app/config.yaml:ro
     depends_on:
-      - api
+      api:
+        condition: service_healthy
 
   web:
     build:

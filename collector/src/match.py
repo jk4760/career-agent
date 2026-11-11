@@ -3,6 +3,10 @@
 """
 
 import re
+from datetime import date, timedelta
+
+# 时效过滤（§9.3-3）：refreshTime 早于 120 天的岗位丢弃（pubTime 参数实测无效，必须客户端过滤）
+MAX_POST_AGE_DAYS = 120
 
 
 def normalize_prefs(p: dict) -> dict:
@@ -29,6 +33,15 @@ def screen(job: dict, prefs: dict) -> tuple[bool, str]:
 
     if _hit_any(title, prefs.get("keywords_exclude") or []):
         return False, "命中排除关键词"
+
+    posted_at = job.get("posted_at") or ""
+    if posted_at:
+        try:
+            posted = date.fromisoformat(str(posted_at)[:10])
+        except ValueError:
+            posted = None  # 解析不出 → 放行，与年限「提取不到 → 放行」同原则
+        if posted and posted < date.today() - timedelta(days=MAX_POST_AGE_DAYS):
+            return False, "发布超过 120 天"
 
     if not location_match(location, title, prefs.get("locations") or []):
         return False, "城市不匹配"
