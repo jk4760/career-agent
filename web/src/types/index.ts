@@ -51,6 +51,8 @@ export interface Preferences {
   salaryMin: number | null
   keywordsInclude: string[]
   keywordsExclude: string[]
+  /** 可接受的岗位经验要求上限（年）；null = 不限 */
+  experienceMin: number | null
   updatedAt: string
 }
 

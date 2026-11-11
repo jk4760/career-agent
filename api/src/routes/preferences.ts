@@ -11,6 +11,7 @@ const preferencesSchema = z.object({
   salaryMin: z.number().nullable(),
   keywordsInclude: z.array(z.string()),
   keywordsExclude: z.array(z.string()),
+  experienceMin: z.number().int().nullable().optional(),
   updatedAt: z.string(),
 })
 
@@ -39,6 +40,7 @@ export const preferencesRoute = new Hono()
           salaryMin: p.salaryMin,
           keywordsInclude: p.keywordsInclude,
           keywordsExclude: p.keywordsExclude,
+          experienceMin: p.experienceMin ?? null,
           updatedAt: new Date(),
         },
       })

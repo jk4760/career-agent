@@ -60,6 +60,8 @@ export const preferences = pgTable('preferences', {
   salaryMin: integer('salary_min'),
   keywordsInclude: text('keywords_include').array(),
   keywordsExclude: text('keywords_exclude').array(),
+  /** M3：可接受的岗位经验要求上限（年）；NULL = 不限 */
+  experienceMin: integer('experience_min'),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })
 

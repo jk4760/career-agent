@@ -19,6 +19,7 @@ interface FormState {
   salaryMin: string
   keywordsInclude: string
   keywordsExclude: string
+  experienceMin: string
 }
 
 export default function PreferencesPage() {
@@ -37,6 +38,7 @@ export default function PreferencesPage() {
         salaryMin: p.salaryMin?.toString() ?? '',
         keywordsInclude: p.keywordsInclude.join(', '),
         keywordsExclude: p.keywordsExclude.join(', '),
+        experienceMin: p.experienceMin?.toString() ?? '',
       })
     })
   }, [repo])
@@ -52,6 +54,7 @@ export default function PreferencesPage() {
 
   const handleSave = async () => {
     const salaryMin = form.salaryMin.trim() === '' ? null : Number(form.salaryMin)
+    const experienceMin = form.experienceMin.trim() === '' ? null : Number(form.experienceMin)
     const savedPrefs = await repo.savePreferences({
       ...prefs,
       industries: parseList(form.industries),
@@ -60,6 +63,7 @@ export default function PreferencesPage() {
       salaryMin: Number.isFinite(salaryMin) ? salaryMin : null,
       keywordsInclude: parseList(form.keywordsInclude),
       keywordsExclude: parseList(form.keywordsExclude),
+      experienceMin: Number.isFinite(experienceMin) ? experienceMin : null,
     })
     setPrefs(savedPrefs)
     setSaved(true)
@@ -117,6 +121,17 @@ export default function PreferencesPage() {
             placeholder="命中任一关键词的岗位优先，如：AI, 大模型"
             value={form.keywordsInclude}
             onChange={update('keywordsInclude')}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="p-experience">经验要求上限（年，可空）</Label>
+          <Input
+            id="p-experience"
+            type="number"
+            min={0}
+            placeholder="如：6；留空表示不限"
+            value={form.experienceMin}
+            onChange={update('experienceMin')}
           />
         </div>
         <div className="space-y-1.5">
