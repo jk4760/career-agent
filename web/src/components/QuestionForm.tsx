@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Star } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { uuid } from '@/lib/utils'
 import {
   Dialog,
   DialogContent,
@@ -82,7 +83,7 @@ export function QuestionForm({ open, materials, onOpenChange, onSave }: Question
   const handleSave = () => {
     if (!question.trim()) return
     onSave({
-      id: crypto.randomUUID(),
+      id: uuid(),
       category,
       question: question.trim(),
       answerDraft: answerDraft.trim() || null,

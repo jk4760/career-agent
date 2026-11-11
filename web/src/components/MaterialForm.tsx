@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Paperclip, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { uuid } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -88,7 +89,7 @@ export function MaterialForm({
     if (!canSave) return
     onSave(
       {
-        id: initial?.id ?? crypto.randomUUID(),
+        id: initial?.id ?? uuid(),
         project: project.trim(),
         title: title.trim(),
         role: role.trim() || null,
