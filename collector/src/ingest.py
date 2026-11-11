@@ -1,0 +1,26 @@
+"""调 api ingest 接口写入（不直连数据库，写路径保持在 TS/drizzle 层）。"""
+
+import logging
+import os
+
+import httpx
+
+log = logging.getLogger("ingest")
+
+API_BASE = os.environ.get("API_BASE", "http://api:3001")
+
+
+def ingest_jobs(jobs: list[dict]) -> dict:
+    if not jobs:
+        return {"inserted": 0, "skipped": 0}
+    resp = httpx.post(f"{API_BASE}/api/jobs/ingest", json={"jobs": jobs}, timeout=30)
+    resp.raise_for_status()
+    result = resp.json()
+    log.info("ingest: inserted=%d skipped=%d", result["inserted"], result["skipped"])
+    return result
+
+
+def fetch_preferences() -> dict:
+    resp = httpx.get(f"{API_BASE}/api/preferences", timeout=15)
+    resp.raise_for_status()
+    return resp.json()

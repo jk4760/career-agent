@@ -29,6 +29,19 @@ services:
       db:
         condition: service_healthy
 
+  collector:
+    # M3 采集器：手动触发，不默认启动
+    # 用法：docker compose --profile manual run --rm collector
+    build:
+      context: ./collector
+    profiles: ['manual']
+    environment:
+      API_BASE: http://api:3001
+    volumes:
+      - ./collector/config.yaml:/app/config.yaml:ro
+    depends_on:
+      - api
+
   web:
     build:
       context: .

@@ -1,0 +1,48 @@
+# NextCareer 采集器配置（入库，非密钥）
+
+rate_limit:
+  search_interval_sec: 2      # 搜索请求间隔（≥2s）
+  detail_interval_sec: 4      # 详情页请求间隔（3–5s）
+  detail_cap_per_run: 100     # 单 run 详情页请求封顶
+
+liepin:
+  cities: ["020"]             # 020=上海（城市码以 ai-job-search-cn 文档为准：北京 010、上海 020、深圳 050090）
+  page_size: 40
+  max_pages_per_keyword: 3    # 每个关键词最多翻 3 页，控制搜索请求量
+
+official:
+  companies:
+    # ★ 优先（10）：URL 已核实（m3 文档 §6.3）
+    - { name: "字节跳动 / TikTok", priority: star, career_url: "https://jobs.bytedance.com/experienced/" }
+    - { name: "小红书", priority: star, career_url: "https://job.xiaohongshu.com" }
+    - { name: "美团 / 大众点评", priority: star, career_url: "https://zhaopin.meituan.com/web/social" }
+    - { name: "哔哩哔哩", priority: star, career_url: "https://www.bilibili.com/blackboard/join-list.html" }
+    - { name: "腾讯", priority: star, career_url: "https://careers.tencent.com/jobopportunity.html" }
+    - { name: "MiniMax", priority: star, career_url: "https://vrfi1sk8a0.jobs.feishu.cn/" }
+    - { name: "XTransfer", priority: star, career_url: "https://xtransfer.zhiye.com/" }
+    - { name: "携程集团", priority: star, career_url: "https://careers.ctrip.com/" }
+    - { name: "华泰证券", priority: star, career_url: "https://wecruit.hotjob.cn/SU6419745cbef57c635fe10142/pb/index.html" }
+    - { name: "Soul App", priority: star, career_url: "https://soulapp.jobs.feishu.cn/" }
+    # 监控（22）：career_url 待补，空 URL 自动跳过并记日志
+    - { name: "Amazon Ads", priority: watch, career_url: "" }
+    - { name: "The Trade Desk", priority: watch, career_url: "" }
+    - { name: "哈啰", priority: watch, career_url: "" }
+    - { name: "喜马拉雅", priority: watch, career_url: "" }
+    - { name: "叮咚买菜", priority: watch, career_url: "" }
+    - { name: "即刻", priority: watch, career_url: "" }
+    - { name: "美柚", priority: watch, career_url: "" }
+    - { name: "网易游戏", priority: watch, career_url: "" }
+    - { name: "商汤科技", priority: watch, career_url: "" }
+    - { name: "传音控股", priority: watch, career_url: "" }
+    - { name: "微软", priority: watch, career_url: "" }
+    - { name: "甄知科技", priority: watch, career_url: "" }
+    - { name: "东方财富", priority: watch, career_url: "" }
+    - { name: "国金证券", priority: watch, career_url: "" }
+    - { name: "冰鉴科技", priority: watch, career_url: "" }
+    - { name: "Airwallex 空中云汇", priority: watch, career_url: "" }
+    - { name: "PayerMax", priority: watch, career_url: "" }
+    - { name: "汇付天下", priority: watch, career_url: "" }
+    - { name: "易鑫集团", priority: watch, career_url: "" }
+    - { name: "数禾科技", priority: watch, career_url: "" }
+    - { name: "拼多多", priority: watch, career_url: "" }
+    - { name: "阿里", priority: watch, career_url: "" }
