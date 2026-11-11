@@ -5,12 +5,12 @@ import sys
 
 import httpx
 
-from config import load_config
-from ingest import fetch_preferences, ingest_jobs
-from match import match, normalize_prefs, screen
-from ratelimit import DetailBudget, RateLimitedError, RateLimiter
-from report import print_report
-from sources.liepin import fetch_detail, search_keyword
+from .config import load_config
+from .ingest import fetch_preferences, ingest_jobs
+from .match import match, normalize_prefs, screen
+from .ratelimit import DetailBudget, RateLimitedError, RateLimiter
+from .report import print_report
+from .sources.liepin import fetch_detail, search_keyword
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 log = logging.getLogger("main")

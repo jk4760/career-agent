@@ -14,7 +14,7 @@ import uuid
 
 import httpx
 
-from ratelimit import DetailBudget, RateLimiter, RateLimitedError, check_not_limited
+from ..ratelimit import DetailBudget, RateLimiter, RateLimitedError, check_not_limited
 
 log = logging.getLogger("liepin")
 
