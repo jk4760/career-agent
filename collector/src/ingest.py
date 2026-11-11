@@ -24,3 +24,10 @@ def fetch_preferences() -> dict:
     resp = httpx.get(f"{API_BASE}/api/preferences", timeout=15)
     resp.raise_for_status()
     return resp.json()
+
+
+def fetch_existing_job_urls() -> set[str]:
+    """已在库岗位的 source_url 集合：已入库的岗位不再抓详情（守住详情请求总量）。"""
+    resp = httpx.get(f"{API_BASE}/api/jobs", timeout=30)
+    resp.raise_for_status()
+    return {j["sourceUrl"] for j in resp.json() if j.get("sourceUrl")}

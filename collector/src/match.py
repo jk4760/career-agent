@@ -44,6 +44,9 @@ def screen(job: dict, prefs: dict) -> tuple[bool, str]:
 def location_match(location: str, title: str, locations: list[str]) -> bool:
     if not locations:
         return True
+    # 无地点信息（如官网监控链接文本）→ 放行，与年限「提取不到 → 放行」同原则
+    if not location:
+        return True
     for loc in locations:
         if loc and loc in location:
             return True

@@ -12,11 +12,13 @@ def print_report(
     detail_cap: int,
     ingest_result: dict,
     rate_limited: bool,
+    official_extracted: int = 0,
 ) -> None:
     lines = [
         "",
         "========== 采集报告 ==========",
         f"搜索获取岗位：{searched}",
+        f"官网监控命中：{official_extracted}",
         f"过滤丢弃：{sum(filtered.values())}" + (f"（明细：{filtered}）" if filtered else ""),
         f"详情页配额用量：{detail_used}/{detail_cap}",
         f"临时限流（302）：{'是（本次提前停手）' if rate_limited else '否'}",

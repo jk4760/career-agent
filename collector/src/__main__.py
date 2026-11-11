@@ -6,11 +6,12 @@ import sys
 import httpx
 
 from .config import load_config
-from .ingest import fetch_preferences, ingest_jobs
+from .ingest import fetch_existing_job_urls, fetch_preferences, ingest_jobs
 from .match import match, normalize_prefs, screen
 from .ratelimit import DetailBudget, RateLimitedError, RateLimiter
 from .report import print_report
 from .sources.liepin import fetch_detail, search_keyword
+from .sources.official import monitor_company
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 log = logging.getLogger("main")
@@ -75,7 +76,15 @@ def run() -> int:
                         continue
                     candidates[job["source_url"]] = job
 
-    searched = len(candidates) + sum(filtered.values())
+    # 已在库岗位跳过详情抓取（不消耗详情配额；入库时本来也会被 dedup 跳过）
+    known_urls = fetch_existing_job_urls()
+    before = len(candidates)
+    for url in list(candidates.keys()):
+        if url in known_urls:
+            del candidates[url]
+    log.info("已在库跳过详情：%d（新增候选：%d）", before - len(candidates), len(candidates))
+
+    searched = before + sum(filtered.values())
     log.info("初筛后候选：%d（初筛丢弃：%d）", len(candidates), sum(filtered.values()))
 
     # 2. 详情抓取 + 完整三规则过滤
@@ -111,8 +120,26 @@ def run() -> int:
     if rate_limited:
         log.warning("触发临时限流，本次 run 提前结束；等待 30 分钟以上可再跑")
 
+    # 2.5 官网监控（§6，任务 7）：B 站等 SSR 页出真实数据，SPA/ATS 页跳过记日志
+    official_accepted: list[dict] = []
+    with httpx.Client(timeout=30) as client:
+        for company in cfg["official"]["companies"]:
+            for job in monitor_company(client, company, prefs, search_limiter):
+                if job["source_url"] in candidates:
+                    continue
+                ok, reason = screen(job, prefs)
+                if not ok:
+                    filtered[reason] = filtered.get(reason, 0) + 1
+                    continue
+                ok, reason = match(job, prefs, "")
+                if not ok:
+                    filtered[reason] = filtered.get(reason, 0) + 1
+                    continue
+                candidates[job["source_url"]] = job
+                official_accepted.append(job)
+
     # 3. 入库（dedup_key 幂等）
-    result = ingest_jobs([to_ingest_payload(j) for j in accepted])
+    result = ingest_jobs([to_ingest_payload(j) for j in accepted + official_accepted])
 
     # 4. 报告
     print_report(
@@ -122,6 +149,7 @@ def run() -> int:
         detail_cap=budget.cap,
         ingest_result=result,
         rate_limited=rate_limited,
+        official_extracted=len(official_accepted),
     )
     return 0
 

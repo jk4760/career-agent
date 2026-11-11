@@ -95,16 +95,30 @@ docker compose exec -T db pg_restore -U nextcareer -d nextcareer < backups/nextc
 | `/materials` | 素材库：facet chips + 搜索 + 项目树状大纲，markdown 渲染，文件导入（.md/.docx/.pdf）与附件下载，新建/编辑抽屉表单，删除二次确认 |
 | `/questions` | 问题库：新增问题表单、详情区即编辑区、列表 hover 删除（二次确认），未关联计数提醒 |
 | `/ai-settings` | AI 对话管理：API 地址 / API Key / 模型列表 chips，保存后面板模型下拉立即联动 |
-| `/preferences` | 偏好设置：行业/职能/城市/薪资底线/包含排除关键词，保存即生效 |
+| `/preferences` | 偏好设置：行业/职能/城市/薪资底线/经验上限（年，可空）/包含排除关键词，保存即生效 |
 
 右侧常驻 **AI 助手面板**：头部模型下拉 + 收起/展开（30px 竖条），消息气泡与输入区样式已定稿，真实对话能力 M5 上线。
+
+## 采集器（M3）
+
+`collector/`：Python 3.12 采集包，从猎聘（主）与目标公司官网（次）低频抓取岗位，经三维度硬过滤后写入 jobs 表。**手动触发，每天最多一次完整采集**：
+
+```bash
+docker compose --profile manual run --rm collector
+```
+
+- **限流纪律（写死）**：搜索间隔 ≥2s、详情页间隔 3–5s、单 run 详情请求封顶 100（已入库岗位不再抓详情）；详情页遇 302（临时限流）即停手等待，不换 IP、不做指纹伪装
+- **过滤规则**（入库前，宁可漏不可噪）：职能方向（title 命中 roles 或 JD 含 include 关键词；命中 exclude 直接丢）＋ 城市/远程（子串匹配，「远程」偏好兼容 Remote 字样；官网链接无地点信息时放行）＋ 职级年限（JD 提取，超过偏好经验上限则丢，提取不到放行）＋ 薪资上限低于偏好下限则丢
+- **官网监控**：`collector/config.yaml` 里 32 家公司清单；只抓静态 HTML，SPA/ATS 页面跳过并记日志；career_url 为空的公司跳过——补 URL 后下 run 生效
+- **合规**：仅供个人低频使用；日志记录每次请求的 URL 与时间戳；猎聘搜索走无 robots.txt 的接口主机，详情页路径不在禁止列表
+- 每次运行结束输出报告：新增 / 重复跳过 / 过滤明细 / 详情配额用量 / 是否触发限流
 
 ## 里程碑
 
 | 里程碑 | 内容 | 状态 |
 |---|---|---|
 | M1 | Portal 骨架 | ✅ |
-| M2 | Postgres + Hono API + Docker Compose 部署（本仓库当前状态） | ✅ |
-| M3 | Python 采集脚本：岗位抓取、清洗、去重（dedup_key） | 未开始 |
+| M2 | Postgres + Hono API + Docker Compose 部署 | ✅ |
+| M3 | Python 采集脚本：岗位抓取、清洗、去重（dedup_key）（本仓库当前状态） | ✅ |
 | M4 | 匹配打分 + 飞书机器人推送 + 反馈回写偏好（动态权重）＋ **绑域名 + 免费 HTTPS 证书**（届时 `crypto.randomUUID` 原生可用，Basic Auth 凭据传输加密） | 未开始 |
 | M5 | AI 助手真能力：LLM 后端代理 + 对话记忆 + 附件对象存储 | 未开始 |
