@@ -106,5 +106,5 @@ docker compose exec -T db pg_restore -U nextcareer -d nextcareer < backups/nextc
 | M1 | Portal 骨架 | ✅ |
 | M2 | Postgres + Hono API + Docker Compose 部署（本仓库当前状态） | ✅ |
 | M3 | Python 采集脚本：岗位抓取、清洗、去重（dedup_key） | 未开始 |
-| M4 | 匹配打分 + 飞书机器人推送 + 反馈回写偏好（动态权重） | 未开始 |
+| M4 | 匹配打分 + 飞书机器人推送 + 反馈回写偏好（动态权重）＋ **绑域名 + 免费 HTTPS 证书**（届时 `crypto.randomUUID` 原生可用，Basic Auth 凭据传输加密） | 未开始 |
 | M5 | AI 助手真能力：LLM 后端代理 + 对话记忆 + 附件对象存储 | 未开始 |
