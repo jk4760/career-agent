@@ -11,18 +11,25 @@ API_BASE = os.environ.get("API_BASE", "http://api:3001")
 
 
 def ingest_jobs(jobs: list[dict]) -> dict:
-    if not jobs:
-        return {"inserted": 0, "skipped": 0, "updated": 0}
-    resp = httpx.post(f"{API_BASE}/api/jobs/ingest", json={"jobs": jobs}, timeout=30)
-    resp.raise_for_status()
-    result = resp.json()
-    log.info(
-        "ingest: inserted=%d skipped=%d updated=%d",
-        result["inserted"],
-        result["skipped"],
-        result.get("updated", 0),
-    )
-    return result
+    """分批入库（api 单批上限 500），返回合计计数。"""
+    total = {"inserted": 0, "skipped": 0, "updated": 0}
+    for i in range(0, len(jobs), 400):
+        batch = jobs[i : i + 400]
+        if not batch:
+            break
+        resp = httpx.post(f"{API_BASE}/api/jobs/ingest", json={"jobs": batch}, timeout=60)
+        resp.raise_for_status()
+        result = resp.json()
+        for k in total:
+            total[k] += result.get(k, 0)
+    if jobs:
+        log.info(
+            "ingest: inserted=%d skipped=%d updated=%d",
+            total["inserted"],
+            total["skipped"],
+            total["updated"],
+        )
+    return total
 
 
 def fetch_preferences() -> dict:

@@ -120,7 +120,7 @@ def run() -> int:
     if rate_limited:
         log.warning("触发临时限流，本次 run 提前结束；等待 30 分钟以上可再跑")
 
-    # 2.5 官网监控（§6，任务 7）：B 站等 SSR 页出真实数据，SPA/ATS 页跳过记日志
+    # 2.5 官网监控（§6）：按域名分派适配器，API 直连的列表自带 JD，直接用于过滤
     official_accepted: list[dict] = []
     with httpx.Client(timeout=30) as client:
         for company in cfg["official"]["companies"]:
@@ -131,15 +131,16 @@ def run() -> int:
                 if not ok:
                     filtered[reason] = filtered.get(reason, 0) + 1
                     continue
-                ok, reason = match(job, prefs, "")
+                ok, reason = match(job, prefs, job.get("description") or "")
                 if not ok:
                     filtered[reason] = filtered.get(reason, 0) + 1
                     continue
                 candidates[job["source_url"]] = job
                 official_accepted.append(job)
 
-    # 3. 入库（dedup_key 幂等）
-    result = ingest_jobs([to_ingest_payload(j) for j in accepted + official_accepted])
+    # 3. 入库（dedup_key 幂等；猎聘/官网分开计数）
+    liepin_result = ingest_jobs([to_ingest_payload(j) for j in accepted])
+    official_result = ingest_jobs([to_ingest_payload(j) for j in official_accepted])
 
     # 4. 报告
     print_report(
@@ -147,9 +148,10 @@ def run() -> int:
         filtered=filtered,
         detail_used=budget.used,
         detail_cap=budget.cap,
-        ingest_result=result,
+        ingest_result=liepin_result,
         rate_limited=rate_limited,
         official_extracted=len(official_accepted),
+        official_result=official_result,
     )
     return 0
 
