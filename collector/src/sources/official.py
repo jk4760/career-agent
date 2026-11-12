@@ -9,6 +9,7 @@
 - 与上次结果的 diff 由 dedup_key 天然实现（已入过的链接自动 skipped）
 """
 
+import html as html_lib
 import logging
 import re
 import time
@@ -305,6 +306,272 @@ def _map_bilibili_post(company_name: str, p: dict) -> dict:
     }
 
 
+# ---------- Greenhouse / Ashby 公开 JSON API ----------
+
+# 国外 ATS 城市名为英文，翻译成中文以便城市过滤（子串匹配）生效
+CITY_EN_ZH = {
+    "shanghai": "上海",
+    "beijing": "北京",
+    "shenzhen": "深圳",
+    "guangzhou": "广州",
+    "hangzhou": "杭州",
+    "chengdu": "成都",
+    "hong kong": "香港",
+}
+
+
+def translate_cities(raw: str) -> str:
+    """「CN - Shanghai」→「上海」；「Shanghai; Shenzhen」→「上海、深圳」；无命中保留原文。"""
+    hits = [zh for en, zh in CITY_EN_ZH.items() if en in raw.lower()]
+    return "、".join(dict.fromkeys(hits)) if hits else raw
+
+
+def greenhouse_api(
+    client: httpx.Client,
+    company: dict,
+    prefs: dict,
+    limiter: RateLimiter,
+) -> list[dict]:
+    """Greenhouse 公开 API（job-boards.greenhouse.io/{board}）：content=true 一次拿全量+JD。"""
+    name = company["name"]
+    board = urlparse(company["career_url"]).path.strip("/").split("/")[0]
+    url = f"https://boards-api.greenhouse.io/v1/boards/{board}/jobs"
+    limiter.wait()
+    log.info("GET %s?content=true", url)
+    try:
+        resp = client.get(url, params={"content": "true"}, headers={"User-Agent": UA})
+        resp.raise_for_status()
+    except httpx.HTTPError as e:
+        log.warning("Greenhouse 接口失败 %s：%s", name, e)
+        return []
+    posts = (resp.json() or {}).get("jobs") or []
+    log.info("%s：获取岗位 %d 条", name, len(posts))
+    return [_map_greenhouse_post(name, p) for p in posts]
+
+
+def _map_greenhouse_post(company_name: str, p: dict) -> dict:
+    jd_html = html_lib.unescape(p.get("content") or "")
+    jd = re.sub(r"<[^>]+>", "", jd_html).strip()
+    return {
+        "title": p.get("title") or "",
+        "company": company_name,
+        "location": translate_cities((p.get("location") or {}).get("name") or ""),
+        "salary_min": None,
+        "salary_max": None,
+        "currency": "CNY",
+        "source": "official",
+        "source_url": p.get("absolute_url") or "",
+        "description": jd,
+        "posted_at": (p.get("first_published") or "")[:10] or None,
+        "_require_work_years": "",
+    }
+
+
+def ashby_api(
+    client: httpx.Client,
+    company: dict,
+    prefs: dict,
+    limiter: RateLimiter,
+) -> list[dict]:
+    """Ashby 公开 API：careers.{board}.com → api.ashbyhq.com/posting-api/job-board/{board}。"""
+    name = company["name"]
+    netloc = urlparse(company["career_url"]).netloc
+    board = netloc.removeprefix("careers.").split(".")[0]
+    url = f"https://api.ashbyhq.com/posting-api/job-board/{board}"
+    limiter.wait()
+    log.info("GET %s", url)
+    try:
+        resp = client.get(url, headers={"User-Agent": UA})
+        resp.raise_for_status()
+    except httpx.HTTPError as e:
+        log.warning("Ashby 接口失败 %s：%s", name, e)
+        return []
+    posts = (resp.json() or {}).get("jobs") or []
+    log.info("%s：获取岗位 %d 条", name, len(posts))
+    return [_map_ashby_post(name, p) for p in posts]
+
+
+def _map_ashby_post(company_name: str, p: dict) -> dict:
+    return {
+        "title": p.get("title") or "",
+        "company": company_name,
+        "location": translate_cities(p.get("location") or ""),
+        "salary_min": None,
+        "salary_max": None,
+        "currency": "CNY",
+        "source": "official",
+        "source_url": p.get("jobUrl") or "",
+        "description": (p.get("descriptionPlain") or "").strip(),
+        "posted_at": (p.get("publishedAt") or "")[:10] or None,
+        "_require_work_years": "",
+    }
+
+
+# ---------- 甄知科技（自建站 SSR，职位+JD 全文在 HTML 内） ----------
+
+def zknow_parser(
+    client: httpx.Client,
+    company: dict,
+    prefs: dict,
+    limiter: RateLimiter,
+) -> list[dict]:
+    """zknow.com/join/ 静态页：tit（标题/发布时间/地点）+ txt（JD 全文）成对出现。"""
+    name = company["name"]
+    url = company["career_url"]
+    limiter.wait()
+    log.info("GET %s", url)
+    try:
+        resp = client.get(url, headers={"User-Agent": UA}, follow_redirects=True)
+        resp.raise_for_status()
+    except httpx.HTTPError as e:
+        log.warning("抓取失败 %s：%s", url, e)
+        return []
+    jobs: list[dict] = []
+    blocks = re.findall(
+        r'<div class="tit[^"]*">([\s\S]*?)</div>\s*<div class="txt"[^>]*>([\s\S]*?)(?=<div class="tit|<div class="list|$)',
+        resp.text,
+    )
+    for tit_html, txt_html in blocks:
+        m = re.search(r'<p class="t-1">([\s\S]*?)</p>', tit_html)
+        if not m:
+            continue
+        title = re.sub(r"<[^>]+>", "", m.group(1)).strip()
+        spans = re.findall(r"<span>([\s\S]*?)</span>", tit_html)
+        meta = [re.sub(r"<[^>]+>", "", s).strip() for s in spans]
+        posted = None
+        location = ""
+        for item in meta:
+            if "发布时间" in item:
+                dm = re.search(r"(\d{4})\.(\d{1,2})\.(\d{1,2})", item)
+                if dm:
+                    posted = f"{dm.group(1)}-{int(dm.group(2)):02d}-{int(dm.group(3)):02d}"
+            elif "工作地点" in item:
+                location = item.split(":", 1)[-1].split("：", 1)[-1].strip()
+        # JD：去掉「立即投递」按钮块，剥标签
+        jd_html = re.sub(r'<div class="btn">[\s\S]*', "", txt_html)
+        jd = re.sub(r"<[^>]+>", "\n", jd_html)
+        jd = html_lib.unescape(re.sub(r"\n{2,}", "\n", jd)).strip()
+        jobs.append(
+            {
+                "title": title,
+                "company": name,
+                "location": location,
+                "salary_min": None,
+                "salary_max": None,
+                "currency": "CNY",
+                "source": "official",
+                # 无独立详情页：用标题 fragment 做稳定 dedup 基础
+                "source_url": f"{url.rstrip('/')}#{title}",
+                "description": jd,
+                "posted_at": posted,
+                "_require_work_years": "",
+            }
+        )
+    log.info("%s：解析职位 %d 条", name, len(jobs))
+    return jobs
+
+
+# ---------- 阿里控股（position/search JSON API，标准 XSRF cookie 流程） ----------
+
+ALIBABA_PAGE_SIZE = 50  # 实测可用
+ALIBABA_MAX_PAGES = 20  # 605 在招 ≈ 13 页（2026-11 实测），20 页封顶
+
+
+def alibaba_api(
+    client: httpx.Client,
+    company: dict,
+    prefs: dict,
+    limiter: RateLimiter,
+) -> list[dict]:
+    """阿里控股社招：GET 列表页取 XSRF-TOKEN cookie → POST /position/search 翻页。"""
+    name = company["name"]
+    base = "https://talent-holding.alibaba.com"
+    limiter.wait()
+    try:
+        client.get(f"{base}/off-campus/position-list", headers={"User-Agent": UA})
+    except httpx.HTTPError as e:
+        log.warning("阿里列表页失败 %s：%s", name, e)
+        return []
+    csrf = client.cookies.get("XSRF-TOKEN") or ""
+    if not csrf:
+        log.warning("阿里 XSRF-TOKEN 未取得 %s", name)
+        return []
+    url = f"{base}/position/search"
+    headers = {
+        "content-type": "application/json",
+        "User-Agent": UA,
+        "Referer": f"{base}/off-campus/position-list",
+    }
+    jobs: list[dict] = []
+    for page in range(1, ALIBABA_MAX_PAGES + 1):
+        body = {
+            "channel": "group_official_site",
+            "language": "zh",
+            "batchId": "",
+            "categories": "",
+            "deptCodes": [],
+            "key": "",
+            "pageIndex": page,
+            "pageSize": ALIBABA_PAGE_SIZE,
+            "regions": "",
+            "subCategories": "",
+            "shareType": "",
+            "shareId": "",
+            "myReferralShareCode": "",
+        }
+        limiter.wait()
+        log.info("POST %s (pageIndex=%d)", url, page)
+        try:
+            resp = client.post(url, params={"_csrf": csrf}, json=body, headers=headers)
+            resp.raise_for_status()
+        except httpx.HTTPError as e:
+            log.warning("阿里接口失败 %s：%s", name, e)
+            break
+        payload = resp.json() or {}
+        if not payload.get("success"):
+            log.warning("阿里接口返回错误 %s：%s", name, payload.get("errorMsg"))
+            break
+        content = payload.get("content") or {}
+        posts = content.get("datas") or []
+        total = content.get("totalCount") or 0
+        log.info("%s：第 %d 页 %d 条（在招共 %d）", name, page, len(posts), total)
+        for p in posts:
+            jobs.append(_map_alibaba_post(base, name, p))
+        if not posts or page * ALIBABA_PAGE_SIZE >= total:
+            break
+    log.info("%s：获取岗位 %d 条", name, len(jobs))
+    return jobs
+
+
+def _map_alibaba_post(base: str, company_name: str, p: dict) -> dict:
+    ts = p.get("publishTime")  # epoch ms
+    posted = (
+        datetime.fromtimestamp(int(ts) / 1000, tz=CST).date().isoformat() if ts else None
+    )
+    exp = p.get("experience") or {}
+    years = ""
+    if exp.get("from") is not None:
+        years = (
+            f"{exp['from']}-{exp['to']}年" if exp.get("to") else f"{exp['from']}年以上"
+        )
+    desc = (p.get("description") or "").strip()
+    req = (p.get("requirement") or "").strip()
+    jd = f"{desc}\n\n{req}".strip() if req else desc
+    return {
+        "title": p.get("name") or "",
+        "company": company_name,
+        "location": "、".join(p.get("workLocations") or []),
+        "salary_min": None,
+        "salary_max": None,
+        "currency": "CNY",
+        "source": "official",
+        "source_url": f"{base}/off-campus/position-detail?positionId={p.get('id')}",
+        "description": jd,
+        "posted_at": posted,
+        "_require_work_years": years,
+    }
+
+
 # ---------- SPA 跳过（渲染兜底本批不做） ----------
 
 def skip_spa(
@@ -423,9 +690,31 @@ ADAPTERS = {
     "soulapp.jobs.feishu.cn": feishu_hire_api,  # Soul
     "careers.tencent.com": tencent_api,
     "www.bilibili.com": bilibili_api,  # career_url 壳页，实际走 jobs.bilibili.com API
+    "job-boards.greenhouse.io": greenhouse_api,  # The Trade Desk
+    "careers.airwallex.com": ashby_api,  # Airwallex 空中云汇
+    "talent-holding.alibaba.com": alibaba_api,  # 阿里控股社招
+    "www.zknow.com": zknow_parser,  # 甄知：自建站 SSR
     "jobs.bytedance.com": skip_spa,  # 字节：API 强制 _signature
     "job.xiaohongshu.com": skip_spa,  # 小红书：ATS proto 编码
     "zhaopin.meituan.com": skip_spa,  # 美团：列表接口需交互触发
+    "careers.ctrip.com": skip_spa,  # 携程：自研 SPA
+    "careers.pddglobalhr.com": skip_spa,  # 拼多多：position/list 强制 anti_content（WAF token）
+    "ruguoapp.com": skip_spa,  # 即刻：实为飞书招聘租户但强制 _signature
+    # 北森系（2026-11-12 实测）：九家同为 italent SPA，无开放列表接口，整体降级跳过
+    "transsion.zhiye.com": skip_spa,
+    "gjzq.zhiye.com": skip_spa,
+    "huifu.zhiye.com": skip_spa,
+    "payermax.zhiye.com": skip_spa,
+    "shuhegroup1.zhiye.com": skip_spa,
+    "ddmcxz.zhiye.com": skip_spa,
+    "xtransfer.zhiye.com": skip_spa,
+    "careers.hellobike.com": skip_spa,  # 品牌站，XHR 实走 hellobike.zhiye.com
+    "jobs.ximalaya.com": skip_spa,  # 品牌站，同为北森 italent
+    # SPA/待探（跳过记日志）
+    "careers.microsoft.com": skip_spa,
+    "amazon.jobs": skip_spa,
+    "zhaopin.eastmoney.com": skip_spa,  # Moka SPA（重定向 app.mokahr.com）
+    "wecruit.hotjob.cn": skip_spa,  # 华泰：用友大易，本轮跳过
 }
 
 
