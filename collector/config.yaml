@@ -23,26 +23,33 @@ official:
     - { name: "携程集团", priority: star, career_url: "https://careers.ctrip.com/" }
     - { name: "华泰证券", priority: star, career_url: "https://wecruit.hotjob.cn/SU6419745cbef57c635fe10142/pb/index.html" }
     - { name: "Soul App", priority: star, career_url: "https://soulapp.jobs.feishu.cn/" }
-    # 监控（22）：career_url 待补，空 URL 自动跳过并记日志
-    - { name: "Amazon Ads", priority: watch, career_url: "" }
-    - { name: "The Trade Desk", priority: watch, career_url: "" }
-    - { name: "哈啰", priority: watch, career_url: "" }
-    - { name: "喜马拉雅", priority: watch, career_url: "" }
-    - { name: "叮咚买菜", priority: watch, career_url: "" }
-    - { name: "即刻", priority: watch, career_url: "" }
-    - { name: "美柚", priority: watch, career_url: "" }
-    - { name: "网易游戏", priority: watch, career_url: "" }
-    - { name: "商汤科技", priority: watch, career_url: "" }
-    - { name: "传音控股", priority: watch, career_url: "" }
-    - { name: "微软", priority: watch, career_url: "" }
-    - { name: "甄知科技", priority: watch, career_url: "" }
-    - { name: "东方财富", priority: watch, career_url: "" }
-    - { name: "国金证券", priority: watch, career_url: "" }
-    - { name: "冰鉴科技", priority: watch, career_url: "" }
-    - { name: "Airwallex 空中云汇", priority: watch, career_url: "" }
-    - { name: "PayerMax", priority: watch, career_url: "" }
-    - { name: "汇付天下", priority: watch, career_url: "" }
-    - { name: "易鑫集团", priority: watch, career_url: "" }
-    - { name: "数禾科技", priority: watch, career_url: "" }
-    - { name: "拼多多", priority: watch, career_url: "" }
-    - { name: "阿里", priority: watch, career_url: "" }
+    # 监控（22）：URL 已于 2026-11-12 调研补全（m3 文档 §6.3），按系统分组
+    # 北森 zhiye 租户（通用解析器，SSR 待实测）
+    - { name: "传音控股", priority: watch, career_url: "https://transsion.zhiye.com/jobs" }
+    - { name: "国金证券", priority: watch, career_url: "https://gjzq.zhiye.com/" }
+    - { name: "汇付天下", priority: watch, career_url: "https://huifu.zhiye.com/" }
+    - { name: "PayerMax", priority: watch, career_url: "https://payermax.zhiye.com/" }
+    - { name: "数禾科技", priority: watch, career_url: "https://shuhegroup1.zhiye.com/" }
+    - { name: "叮咚买菜", priority: watch, career_url: "https://ddmcxz.zhiye.com/" }
+    # 北森品牌站（同构待实测）
+    - { name: "哈啰", priority: watch, career_url: "https://careers.hellobike.com/" }
+    - { name: "喜马拉雅", priority: watch, career_url: "http://jobs.ximalaya.com/" }
+    # SSR 直接抓
+    - { name: "拼多多", priority: watch, career_url: "https://careers.pddglobalhr.com/jobs" }
+    - { name: "即刻", priority: watch, career_url: "https://ruguoapp.com/" }
+    - { name: "甄知科技", priority: watch, career_url: "https://www.zknow.com/join/" }
+    - { name: "阿里", priority: watch, career_url: "https://talent-holding.alibaba.com/off-campus/position-list" }
+    # 公开 JSON API
+    - { name: "The Trade Desk", priority: watch, career_url: "https://job-boards.greenhouse.io/thetradedesk" }
+    - { name: "Airwallex 空中云汇", priority: watch, career_url: "https://careers.airwallex.com/" }
+    # SPA / 待探（跳过记日志）
+    - { name: "微软", priority: watch, career_url: "https://careers.microsoft.com/" }
+    - { name: "Amazon Ads", priority: watch, career_url: "https://amazon.jobs/content/en/teams/advertising" }
+    - { name: "东方财富", priority: watch, career_url: "https://zhaopin.eastmoney.com/" }
+    # 自建站（不单独开发解析器，静态抓取白捡则收、SPA 则跳过）
+    - { name: "网易游戏", priority: watch, career_url: "https://hr.163.com/" }
+    - { name: "商汤科技", priority: watch, career_url: "https://hr.sensetime.com/" }
+    - { name: "美柚", priority: watch, career_url: "https://www.meiyou.com/joinus" }
+    - { name: "冰鉴科技", priority: watch, career_url: "https://www.icekredit.com/careers/jobs/" }
+    # 无独立招聘官网：仅猎聘/BOSS 聚合页，主线路已覆盖，不造特殊逻辑
+    - { name: "易鑫集团", priority: watch, career_url: "", note: "aggregator_only" }
