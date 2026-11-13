@@ -62,6 +62,14 @@ function salaryText(j: JobRow): string {
   return '面议'
 }
 
+/** JD 摘要：剥空白截 ~100 字，未评分岗位判断「是干啥的」全靠它 */
+function jdDigest(j: JobRow): string {
+  const text = (j.description || '').replace(/\s+/g, ' ').trim()
+  return text.length > 100 ? `${text.slice(0, 100)}…` : text
+}
+
+const WEB_BASE = process.env.WEB_BASE_URL || 'http://49.235.68.206'
+
 interface Candidate {
   job: JobRow
   score: ScoreBreakdown
@@ -135,9 +143,16 @@ export async function pushJobs(prefs: Prefs): Promise<{
   }
 
   const lines = candidates.map(({ job, score }) => {
-    const tags = [...score.llmReasons, ...score.ruleFacts].slice(0, 2)
-    const tagText = tags.length ? ` \`${tags.join('` `')}\`` : ''
-    return `**${job.company}** · ${job.title} · ${salaryText(job)} · ${job.location || '地点未知'}${tagText}\n[查看 JD](${job.sourceUrl})`
+    const scoreText = `【匹配 ${score.final} 分】`
+    const highlight = score.llmHighlight ? `\n看点：${score.llmHighlight}` : ''
+    const digest = jdDigest(job)
+    const act = (action: string, label: string) =>
+      `[${label}](${WEB_BASE}/jobs?focus=${job.id}&action=${action})`
+    return (
+      `**${job.company}** · ${job.title} · ${salaryText(job)} · ${job.location || '地点未知'} ${scoreText}${highlight}\n` +
+      `JD 摘要：${digest || '（无 JD 正文）'}\n` +
+      `${act('interested', '感兴趣')} ${act('pass', '不合适')} ${act('applied', '已投递')} ｜ [查看 JD](${job.sourceUrl})`
+    )
   })
   const card = {
     msg_type: 'interactive',

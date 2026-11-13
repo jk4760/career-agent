@@ -39,6 +39,10 @@ function MetaPill({
 interface JobRowProps {
   job: JobWithStatus
   onFeedback: (jobId: string, action: FeedbackAction, reason: string | null, comment: string) => void
+  /** M4 飞书深链：?focus=<id> 时默认展开详情 */
+  defaultExpanded?: boolean
+  /** M4 飞书深链：?action=xxx 时自动打开对应反馈弹窗 */
+  initialAction?: FeedbackAction | null
 }
 
 /**
@@ -46,9 +50,9 @@ interface JobRowProps {
  * 左 40px 公司首字符方块 | 中：标题 + 公司 | 右：元信息 pill + 状态徽标 + 操作按钮。
  * 行 hover 时 pill 轻微左移（§10.6.7），点击就地展开详情（§10.6.2 动画）。
  */
-export function JobRow({ job, onFeedback }: JobRowProps) {
-  const [expanded, setExpanded] = useState(false)
-  const [pendingAction, setPendingAction] = useState<FeedbackAction | null>(null)
+export function JobRow({ job, onFeedback, defaultExpanded = false, initialAction = null }: JobRowProps) {
+  const [expanded, setExpanded] = useState(defaultExpanded)
+  const [pendingAction, setPendingAction] = useState<FeedbackAction | null>(initialAction)
 
   return (
     <div className="group/row">
@@ -134,6 +138,11 @@ export function JobRow({ job, onFeedback }: JobRowProps) {
       {expanded && (
         <div className="border-t-[0.5px] bg-muted/40 px-4 py-3">
           <div className="row-expand">
+            {job.score.llmHighlight && (
+              <p className="mb-2 max-w-3xl text-[13px] text-muted-foreground">
+                看点：{job.score.llmHighlight}
+              </p>
+            )}
             <p className="max-w-3xl text-[15px] leading-relaxed whitespace-pre-wrap text-foreground/90">
               {job.description ?? '（无描述）'}
             </p>

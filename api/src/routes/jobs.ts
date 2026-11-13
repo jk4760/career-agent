@@ -89,7 +89,7 @@ export const jobsRoute = new Hono()
     return c.json(result)
   })
 
-  // getJob(id)
+  // getJob(id)：M4 起同样附可解释打分（深链定位卡依赖）
   .get('/:id', async (c) => {
     const id = c.req.param('id')
     const [job] = await db.select().from(jobs).where(eq(jobs.id, id))
@@ -99,7 +99,26 @@ export const jobsRoute = new Hono()
       .from(feedbackEvents)
       .where(eq(feedbackEvents.jobId, id))
       .orderBy(desc(feedbackEvents.createdAt))
-    return c.json({ ...job, status: events[0]?.action ?? 'new', feedbackEvents: events })
+    const [prefRow] = await db.select().from(preferences).limit(1)
+    const prefs: Prefs = {
+      roles: prefRow?.roles ?? [],
+      locations: prefRow?.locations ?? [],
+      salaryMin: prefRow?.salaryMin ?? null,
+      keywordsInclude: prefRow?.keywordsInclude ?? [],
+      keywordsExclude: prefRow?.keywordsExclude ?? [],
+      experienceMin: prefRow?.experienceMin ?? null,
+      backgroundText: prefRow?.backgroundText ?? null,
+    }
+    const now = new Date()
+    const allEvents = await db.select().from(feedbackEvents)
+    const allJobs = (await db.select().from(jobs)) as JobRow[] // 连坐需要全表（事件源岗位关键词）
+    const adjustments = feedbackAdjustments(allJobs, allEvents, prefs, now)
+    return c.json({
+      ...job,
+      status: events[0]?.action ?? 'new',
+      feedbackEvents: events,
+      score: buildScore(job as JobRow, prefs, adjustments.get(job.id), now),
+    })
   })
 
   // M3 采集器入库：按 dedup_key 幂等 upsert（仅 compose 内网调用）

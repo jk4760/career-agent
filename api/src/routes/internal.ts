@@ -66,6 +66,8 @@ export const internalRoute = new Hono()
         llm: score.llm,
         rule: score.rule,
         feedback: score.feedback.total,
+        highlight: score.llmHighlight,
+        jdDigest: (job.description || '').replace(/\s+/g, ' ').trim().slice(0, 100),
       })),
     )
   })

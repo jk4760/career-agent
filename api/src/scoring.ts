@@ -25,7 +25,13 @@ export interface JobRow {
   description: string | null
   postedAt: string | null
   collectedAt: Date
-  llmEval: { score: number; reasons: string[]; prompt_version: string; scored_at: string } | null
+  llmEval: {
+    score: number
+    reasons: string[]
+    highlight?: string
+    prompt_version: string
+    scored_at: string
+  } | null
 }
 
 export interface ScoreBreakdown {
@@ -37,6 +43,8 @@ export interface ScoreBreakdown {
   feedback: { total: number; items: { keyword: string; delta: number; action: string }[] }
   ruleFacts: string[]
   llmReasons: string[]
+  /** v1.1+：LLM 一句话看点；未评分/旧版本为空串 */
+  llmHighlight: string
 }
 
 // 公司分层（与 collector/config.yaml §official.companies 同步；别名兼容猎聘侧公司名写法）
@@ -223,6 +231,7 @@ export function buildScore(
     feedback: fb,
     ruleFacts: facts,
     llmReasons: job.llmEval?.reasons ?? [],
+    llmHighlight: job.llmEval?.highlight ?? '',
   }
 }
 

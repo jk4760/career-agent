@@ -34,6 +34,8 @@ export const jobs = pgTable('jobs', {
   llmEval: jsonb('llm_eval').$type<{
     score: number
     reasons: string[]
+    /** v1.1+：一句话看点（岗位是干啥的 + 为什么值得看），推送卡片与 Web 卡片共用 */
+    highlight?: string
     prompt_version: string
     scored_at: string
   }>(),

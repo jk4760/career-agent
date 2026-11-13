@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Inbox } from 'lucide-react'
 import { EmptyState } from '@/components/EmptyState'
 import { JobRow } from '@/components/JobRow'
@@ -22,6 +22,11 @@ export default function JobsPage() {
   const [tab, setTab] = useState<TabValue>('all')
   const [sort, setSort] = useState<'score' | 'time'>('score')
   const [jobs, setJobs] = useState<JobWithStatus[]>([])
+  // M4 飞书深链：/jobs?focus=<id>&action=<interested|pass|applied>
+  const [searchParams, setSearchParams] = useSearchParams()
+  const focusId = searchParams.get('focus')
+  const focusAction = searchParams.get('action') as FeedbackAction | null
+  const [focusJob, setFocusJob] = useState<JobWithStatus | null>(null)
 
   const reload = useCallback(async () => {
     const list = await repo.listJobs(tab === 'all' ? undefined : tab, sort)
@@ -32,6 +37,17 @@ export default function JobsPage() {
   useEffect(() => {
     void reload()
   }, [reload])
+
+  // 定位岗位：先在列表里找，找不到（如已被标记进其他 tab）再单取
+  useEffect(() => {
+    if (!focusId) {
+      setFocusJob(null)
+      return
+    }
+    const inList = jobs.find((j) => j.id === focusId)
+    if (inList) setFocusJob(inList)
+    else void repo.getJob(focusId).then(setFocusJob)
+  }, [focusId, jobs, repo])
 
   // 变更后无需手动 reload：repo 随 App 状态更新生成新实例，
   // 上面的 effect 会随之重新拉取（手动 reload 反而会用过期闭包覆盖新数据）
@@ -82,6 +98,28 @@ export default function JobsPage() {
           <span className="text-sm text-muted-foreground tabular-nums">共 {jobs.length} 条</span>
         </div>
       </div>
+
+      {/* M4 飞书深链定位卡：置顶展开，可带预选动作直接弹反馈窗 */}
+      {focusJob && (
+        <div className="rounded-lg border-2 border-primary/40 bg-card">
+          <div className="flex items-center justify-between px-4 pt-2 text-xs text-muted-foreground">
+            <span>从飞书推送定位到此岗位</span>
+            <button
+              type="button"
+              className="underline underline-offset-2 hover:text-foreground"
+              onClick={() => setSearchParams({})}
+            >
+              返回完整列表
+            </button>
+          </div>
+          <JobRow
+            job={focusJob}
+            onFeedback={handleFeedback}
+            defaultExpanded
+            initialAction={focusAction}
+          />
+        </div>
+      )}
 
       {jobs.length === 0 ? (
         tab === 'all' ? (

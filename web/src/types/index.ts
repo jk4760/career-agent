@@ -19,6 +19,8 @@ export interface ScoreBreakdown {
   feedback: { total: number; items: { keyword: string; delta: number; action: string }[] }
   ruleFacts: string[]
   llmReasons: string[]
+  /** v1.1+：LLM 一句话看点；未评分/旧版本为空串 */
+  llmHighlight: string
 }
 
 /** M4：LLM 主导分缓存（jobs.llm_eval） */

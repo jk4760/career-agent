@@ -1,7 +1,7 @@
 // M4 施工项 3：LLM 评分 prompt（版本化入 git；升级 PROMPT_VERSION 触发全量重评）
 // 锚定评分标准 + 校准示例压抖动；temperature 0 + 结构化 JSON 输出
 
-export const PROMPT_VERSION = 'v1.0'
+export const PROMPT_VERSION = 'v1.1'
 
 export function systemPrompt(): string {
   return `你是求职匹配评分助手。根据候选人的个人背景与求职偏好，评估岗位与候选人的匹配度，输出 0–100 分。
@@ -16,12 +16,16 @@ export function systemPrompt(): string {
 评分只看岗位与候选人的匹配事实，不因公司规模、知名度加减分。
 
 输出严格 JSON，不要输出任何其他内容：
-{"score": <0-100 整数>, "reasons": [<最多 2 个标签，每个不超过 12 字，说明最关键的匹配或不匹配点>]}
+{
+  "score": <0-100 整数>,
+  "reasons": [<最多 2 个标签，每个不超过 12 字，说明最关键的匹配或不匹配点>],
+  "highlight": "<一句话，不超过 30 字：这个岗位是做什么的 + 为什么值得（或不值得）候选人看>"
+}
 
 校准示例：
-- 候选人背景为「数据分析转 AI 产品」时，岗位「AI Agent 产品经理（大厂，上海）」→ {"score": 92, "reasons": ["AI 产品方向对口", "数据分析经验可复用"]}
-- 同一候选人，岗位「Java 后端开发工程师」→ {"score": 25, "reasons": ["纯开发岗不对口"]}
-- 同一候选人，岗位「金融业务数据运营专员」→ {"score": 58, "reasons": ["数据相关但偏运营执行"]}`
+- 候选人背景为「数据分析转 AI 产品」时，岗位「AI Agent 产品经理（大厂，上海）」→ {"score": 92, "reasons": ["AI 产品方向对口", "数据分析经验可复用"], "highlight": "负责 AI Agent 产品从 0 到 1，与候选人的 Agent 项目经历直接对口"}
+- 同一候选人，岗位「Java 后端开发工程师」→ {"score": 25, "reasons": ["纯开发岗不对口"], "highlight": "后端开发岗，与候选人的产品/分析方向不匹配"}
+- 同一候选人，岗位「金融业务数据运营专员」→ {"score": 58, "reasons": ["数据相关但偏运营执行"], "highlight": "金融数据运营执行岗，数据相关但缺少产品决策空间"}`
 }
 
 export interface ScoreJobInput {

@@ -13,6 +13,7 @@ const PACE_MS = 1000 // 串行低频发评；该账号 RPM 上限低（429 由�
 export interface LlmResult {
   score: number
   reasons: string[]
+  highlight: string
 }
 
 export interface ScoreRunState {
@@ -110,7 +111,11 @@ async function callLLM(
     const reasons = Array.isArray(parsed.reasons)
       ? parsed.reasons.filter((r): r is string => typeof r === 'string').slice(0, 2)
       : []
-    return { score: Math.round(score), reasons }
+    const highlight =
+      typeof (parsed as { highlight?: unknown }).highlight === 'string'
+        ? ((parsed as { highlight: string }).highlight.slice(0, 60) as string)
+        : ''
+    return { score: Math.round(score), reasons, highlight }
   } catch (e) {
     console.error(`[llm] 调用失败: ${e instanceof Error ? e.message : e}`)
     return null
@@ -183,6 +188,7 @@ export async function runScoring(
               llmEval: {
                 score: result.score,
                 reasons: result.reasons,
+                highlight: result.highlight,
                 prompt_version: PROMPT_VERSION,
                 scored_at: new Date().toISOString(),
               },
