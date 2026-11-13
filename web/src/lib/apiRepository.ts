@@ -32,11 +32,16 @@ async function reqJson<T>(path: string, method: string, body: unknown): Promise<
 }
 
 export const apiRepository: Repository = {
-  listJobs: (status?: JobStatus) =>
-    req<JobWithStatus[]>(`/jobs${status ? `?status=${status}` : ''}`),
+  listJobs: (status?: JobStatus, sort?: 'score' | 'time') => {
+    const params = new URLSearchParams()
+    if (status) params.set('status', status)
+    if (sort) params.set('sort', sort)
+    const qs = params.toString()
+    return req<JobWithStatus[]>(`/jobs${qs ? `?${qs}` : ''}`)
+  },
   getJob: (id: string) => req<JobWithStatus | null>(`/jobs/${id}`),
-  addFeedback: async (jobId: string, action: FeedbackAction, comment?: string) => {
-    await reqJson(`/jobs/${jobId}/feedback`, 'POST', { action, comment })
+  addFeedback: async (jobId: string, action: FeedbackAction, reason: string | null, comment?: string) => {
+    await reqJson(`/jobs/${jobId}/feedback`, 'POST', { action, reason, comment })
   },
 
   listMaterials: () => req<Material[]>('/materials'),

@@ -4,6 +4,31 @@
 /** 反馈动作（feedback_events.action 的受控取值） */
 export type FeedbackAction = 'interested' | 'pass' | 'applied'
 
+/** M4：结构化反馈维度——不合适必选六选一；感兴趣可选三选 */
+export const PASS_REASONS = ['职能', '薪资', '地点', '职级', '公司', '其他'] as const
+export const INTERESTED_REASONS = ['职能对口', '薪资满意', '公司想去'] as const
+
+/** M4：岗位打分的可解释结构（api 实时计算） */
+export interface ScoreBreakdown {
+  final: number
+  llm: number | null
+  rule: number
+  ruleDims: { role: number; salary: number; company: number; freshness: number; experience: number }
+  /** true = LLM 分缺失，按规则参考分排序（降级） */
+  usedFallback: boolean
+  feedback: { total: number; items: { keyword: string; delta: number; action: string }[] }
+  ruleFacts: string[]
+  llmReasons: string[]
+}
+
+/** M4：LLM 主导分缓存（jobs.llm_eval） */
+export interface LlmEval {
+  score: number
+  reasons: string[]
+  prompt_version: string
+  scored_at: string
+}
+
 /**
  * 岗位派生状态：
  * - new：该岗位没有任何反馈事件
@@ -27,12 +52,15 @@ export interface Job {
   /** ISO 时间戳 */
   collectedAt: string
   dedupKey: string
+  /** M4：LLM 评分缓存；null = 未评分/评分失败（走规则分降级） */
+  llmEval: LlmEval | null
 }
 
 export interface FeedbackEvent {
   id: string
   jobId: string
   action: FeedbackAction
+  reason: string | null
   comment: string | null
   createdAt: string
 }
@@ -41,6 +69,7 @@ export interface FeedbackEvent {
 export interface JobWithStatus extends Job {
   status: JobStatus
   feedbackEvents: FeedbackEvent[]
+  score: ScoreBreakdown
 }
 
 export interface Preferences {
@@ -53,6 +82,8 @@ export interface Preferences {
   keywordsExclude: string[]
   /** 可接受的岗位经验要求上限（年）；null = 不限 */
   experienceMin: number | null
+  /** M4：个人背景自述（300–500 字），注入 LLM 评分 */
+  backgroundText: string | null
   updatedAt: string
 }
 

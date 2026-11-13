@@ -15,11 +15,16 @@ import type {
  * M2 将用 Postgres 实现同一接口进行替换，页面代码无需改动。
  */
 export interface Repository {
-  /** 按派生状态筛选岗位，不传则返回全部，按采集时间倒序 */
-  listJobs(status?: JobStatus): Promise<JobWithStatus[]>
+  /** 按派生状态筛选岗位；sort=score 匹配分降序（默认，30 天无反馈沉底），sort=time 采集时间倒序 */
+  listJobs(status?: JobStatus, sort?: 'score' | 'time'): Promise<JobWithStatus[]>
   getJob(id: string): Promise<JobWithStatus | null>
-  /** 追加一条反馈事件（不改写历史；岗位派生状态由最新事件决定） */
-  addFeedback(jobId: string, action: FeedbackAction, comment?: string): Promise<void>
+  /** 追加一条反馈事件（不改写历史；不合适必传 reason 六选一，感兴趣可选三选） */
+  addFeedback(
+    jobId: string,
+    action: FeedbackAction,
+    reason: string | null,
+    comment?: string,
+  ): Promise<void>
 
   listMaterials(): Promise<Material[]>
   /** 新建或更新（按 id 判断），返回保存后的实体 */

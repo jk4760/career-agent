@@ -38,7 +38,7 @@ function MetaPill({
 
 interface JobRowProps {
   job: JobWithStatus
-  onFeedback: (jobId: string, action: FeedbackAction, comment: string) => void
+  onFeedback: (jobId: string, action: FeedbackAction, reason: string | null, comment: string) => void
 }
 
 /**
@@ -68,11 +68,36 @@ export function JobRow({ job, onFeedback }: JobRowProps) {
             <span className="mt-0.5 block truncate text-[13px] text-muted-foreground">
               {job.company}
             </span>
+            {/* M4：LLM 理由标签 + 规则事实标签 */}
+            {(job.score.llmReasons.length > 0 || job.score.ruleFacts.length > 0) && (
+              <span className="mt-1 flex flex-wrap gap-1">
+                {job.score.llmReasons.map((t) => (
+                  <span
+                    key={`llm-${t}`}
+                    className="rounded-md bg-accent px-1.5 py-0.5 text-[11px] text-accent-foreground"
+                  >
+                    {t}
+                  </span>
+                ))}
+                {job.score.ruleFacts.map((t) => (
+                  <span
+                    key={`fact-${t}`}
+                    className="rounded-md border px-1.5 py-0.5 text-[11px] text-muted-foreground"
+                  >
+                    {t}
+                  </span>
+                ))}
+              </span>
+            )}
           </span>
         </button>
 
         {/* 右：元信息 pill（桌面端展示，hover 左移让出操作区） */}
         <div className="hidden shrink-0 items-center gap-1.5 transition-transform duration-300 group-hover/row:-translate-x-2 lg:flex">
+          {/* M4：最终排序分（降级时附说明） */}
+          <MetaPill accent className="tabular-nums" aria-label="最终排序分">
+            匹配 {job.score.final}
+          </MetaPill>
           {job.location && <MetaPill>{job.location}</MetaPill>}
           <MetaPill className="tabular-nums">{formatSalary(job)}</MetaPill>
           <MetaPill accent>{job.source}</MetaPill>
@@ -118,11 +143,20 @@ export function JobRow({ job, onFeedback }: JobRowProps) {
                 {job.feedbackEvents.map((e) => (
                   <div key={e.id}>
                     <span className="tabular-nums">{e.createdAt.slice(0, 10)}</span> 标记为「
-                    {feedbackActionLabels[e.action]}」{e.comment ? `：${e.comment}` : ''}
+                    {feedbackActionLabels[e.action]}」{e.reason ? `（${e.reason}）` : ''}
+                    {e.comment ? `：${e.comment}` : ''}
                   </div>
                 ))}
               </div>
             )}
+
+            {/* M4：分数可解释（规则分 / LLM 分 / 反馈调整拆开） */}
+            <div className="mt-2 max-w-3xl text-xs text-muted-foreground tabular-nums">
+              最终分 {job.score.final} ={' '}
+              {job.score.usedFallback ? `规则分 ${job.score.rule}（LLM 未评分）` : `LLM 分 ${job.score.llm}`}
+              {job.score.feedback.total !== 0 &&
+                ` ${job.score.feedback.total > 0 ? '+' : ''}${job.score.feedback.total} 反馈调整`}
+            </div>
 
             <div className="mt-3">
               <Button
@@ -146,8 +180,8 @@ export function JobRow({ job, onFeedback }: JobRowProps) {
           onOpenChange={(open) => {
             if (!open) setPendingAction(null)
           }}
-          onConfirm={(comment) => {
-            onFeedback(job.id, pendingAction, comment)
+          onConfirm={(reason, comment) => {
+            onFeedback(job.id, pendingAction, reason, comment)
             setPendingAction(null)
           }}
         />

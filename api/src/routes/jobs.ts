@@ -6,8 +6,13 @@ import { feedbackEvents, jobs, preferences } from '../../../db/schema'
 import { db } from '../db'
 import { buildScore, feedbackAdjustments, type JobRow, type Prefs } from '../scoring'
 
+// M4：不合适必选六选一；感兴趣可选三选；applied 不带 reason
+const PASS_REASONS = ['职能', '薪资', '地点', '职级', '公司', '其他'] as const
+const INTERESTED_REASONS = ['职能对口', '薪资满意', '公司想去'] as const
+
 const feedbackSchema = z.object({
   action: z.enum(['interested', 'pass', 'applied']),
+  reason: z.string().max(20).optional(),
   comment: z.string().optional(),
 })
 
@@ -145,19 +150,31 @@ export const jobsRoute = new Hono()
     return c.json({ inserted, updated, skipped: values.length - rows.length }, 201)
   })
 
-  // addFeedback(jobId, action, comment?)：追加式，不改写历史
+  // addFeedback(jobId, action, reason?, comment?)：追加式，不改写历史
   .post('/:id/feedback', async (c) => {
     const id = c.req.param('id')
     const parsed = feedbackSchema.safeParse(await c.req.json())
     if (!parsed.success) return c.json({ error: parsed.error.issues }, 400)
+    const { action, reason, comment } = parsed.data
+    if (action === 'pass' && !(reason && PASS_REASONS.includes(reason as (typeof PASS_REASONS)[number]))) {
+      return c.json({ error: '不合适必须选择原因（职能/薪资/地点/职级/公司/其他）' }, 400)
+    }
+    if (
+      action === 'interested' &&
+      reason &&
+      !INTERESTED_REASONS.includes(reason as (typeof INTERESTED_REASONS)[number])
+    ) {
+      return c.json({ error: '感兴趣原因必须是：职能对口/薪资满意/公司想去' }, 400)
+    }
     const [job] = await db.select({ id: jobs.id }).from(jobs).where(eq(jobs.id, id))
     if (!job) return c.json({ error: 'job not found' }, 404)
     const [event] = await db
       .insert(feedbackEvents)
       .values({
         jobId: id,
-        action: parsed.data.action,
-        comment: parsed.data.comment?.trim() ? parsed.data.comment.trim() : null,
+        action,
+        reason: action === 'applied' ? null : (reason ?? null),
+        comment: comment?.trim() ? comment.trim() : null,
       })
       .returning()
     return c.json(event, 201)

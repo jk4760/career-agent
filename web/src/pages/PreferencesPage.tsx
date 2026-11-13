@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import { useRepository } from '@/lib/repository'
 import type { Preferences } from '@/types'
 
@@ -20,6 +21,7 @@ interface FormState {
   keywordsInclude: string
   keywordsExclude: string
   experienceMin: string
+  backgroundText: string
 }
 
 export default function PreferencesPage() {
@@ -39,6 +41,7 @@ export default function PreferencesPage() {
         keywordsInclude: p.keywordsInclude.join(', '),
         keywordsExclude: p.keywordsExclude.join(', '),
         experienceMin: p.experienceMin?.toString() ?? '',
+        backgroundText: p.backgroundText ?? '',
       })
     })
   }, [repo])
@@ -64,6 +67,7 @@ export default function PreferencesPage() {
       keywordsInclude: parseList(form.keywordsInclude),
       keywordsExclude: parseList(form.keywordsExclude),
       experienceMin: Number.isFinite(experienceMin) ? experienceMin : null,
+      backgroundText: form.backgroundText.trim() ? form.backgroundText.trim() : null,
     })
     setPrefs(savedPrefs)
     setSaved(true)
@@ -143,6 +147,35 @@ export default function PreferencesPage() {
             onChange={update('keywordsExclude')}
           />
         </div>
+      </div>
+
+      {/* M4：个人背景（注入 LLM 评分；保存触发近 60 天岗位重评） */}
+      <div className="space-y-2 rounded-lg border bg-card p-4 sm:p-6">
+        <div className="flex items-baseline justify-between">
+          <Label htmlFor="p-background">个人背景</Label>
+          <span
+            className={`text-xs tabular-nums ${
+              form.backgroundText.trim().length >= 300 && form.backgroundText.trim().length <= 500
+                ? 'text-status-interested'
+                : 'text-muted-foreground'
+            }`}
+          >
+            {form.backgroundText.trim().length} / 建议 300–500 字
+          </span>
+        </div>
+        <Textarea
+          id="p-background"
+          rows={8}
+          placeholder="教育背景、核心经历与量化成果、求职方向与偏好——会作为 LLM 匹配评分的画像输入。"
+          value={form.backgroundText}
+          onChange={(e) => {
+            setForm({ ...form, backgroundText: e.target.value })
+            setSaved(false)
+          }}
+        />
+        <p className="text-xs text-muted-foreground">
+          保存后按新偏好与个人背景重评近 60 天岗位（后台异步执行，几分钟后分数刷新）。
+        </p>
       </div>
 
       <div className="flex items-center gap-3">

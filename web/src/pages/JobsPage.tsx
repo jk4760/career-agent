@@ -20,13 +20,14 @@ export default function JobsPage() {
   const repo = useRepository()
   const navigate = useNavigate()
   const [tab, setTab] = useState<TabValue>('all')
+  const [sort, setSort] = useState<'score' | 'time'>('score')
   const [jobs, setJobs] = useState<JobWithStatus[]>([])
 
   const reload = useCallback(async () => {
-    const list = await repo.listJobs(tab === 'all' ? undefined : tab)
+    const list = await repo.listJobs(tab === 'all' ? undefined : tab, sort)
     // 「全部」tab 排除「不合适」（纯前端过滤；反馈事件保留，「不合适」tab 完整不变）
     setJobs(tab === 'all' ? list.filter((j) => j.status !== 'pass') : list)
-  }, [repo, tab])
+  }, [repo, tab, sort])
 
   useEffect(() => {
     void reload()
@@ -34,8 +35,13 @@ export default function JobsPage() {
 
   // 变更后无需手动 reload：repo 随 App 状态更新生成新实例，
   // 上面的 effect 会随之重新拉取（手动 reload 反而会用过期闭包覆盖新数据）
-  const handleFeedback = async (jobId: string, action: FeedbackAction, comment: string) => {
-    await repo.addFeedback(jobId, action, comment)
+  const handleFeedback = async (
+    jobId: string,
+    action: FeedbackAction,
+    reason: string | null,
+    comment: string,
+  ) => {
+    await repo.addFeedback(jobId, action, reason, comment)
   }
 
   return (
@@ -50,7 +56,31 @@ export default function JobsPage() {
             ))}
           </TabsList>
         </Tabs>
-        <span className="text-sm text-muted-foreground tabular-nums">共 {jobs.length} 条</span>
+        <div className="flex items-center gap-3">
+          {/* M4：排序切换（匹配分降序=默认，30 天无反馈沉底；按时间=采集时间倒序） */}
+          <div className="flex items-center gap-1 text-sm">
+            {(
+              [
+                { value: 'score', label: '按匹配分' },
+                { value: 'time', label: '按时间' },
+              ] as const
+            ).map((s) => (
+              <button
+                key={s.value}
+                type="button"
+                onClick={() => setSort(s.value)}
+                className={`rounded-md px-2 py-1 transition-colors ${
+                  sort === s.value
+                    ? 'bg-accent font-medium text-accent-foreground'
+                    : 'text-muted-foreground hover:bg-muted'
+                }`}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+          <span className="text-sm text-muted-foreground tabular-nums">共 {jobs.length} 条</span>
+        </div>
       </div>
 
       {jobs.length === 0 ? (
