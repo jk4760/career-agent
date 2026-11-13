@@ -113,6 +113,23 @@ docker compose --profile manual run --rm collector
 - **合规**：仅供个人低频使用；日志记录每次请求的 URL 与时间戳；猎聘搜索走无 robots.txt 的接口主机，详情页路径不在禁止列表
 - 每次运行结束输出报告：猎聘与官网分开计数（新增 / 重复跳过 / 补回 JD）、过滤明细、详情配额用量、是否触发限流
 
+## 自动化（M4）
+
+**打分**：最终排序分 = LLM 主导分（`jobs.llm_eval` 缓存，Moonshot/Kimi，temperature 0，prompt 版本化于 `api/src/llm/scorePrompt.ts`）+ 反馈调整（不合适 −20 / 感兴趣 +10 职能词连坐，60 天衰减）；LLM 缺失自动降级为规则五维参考分 + 反馈调整。规则分同时产出事实标签（薪资达标/★目标公司/7 天内等）。
+
+**每日编排**：唯一入口 `ops/daily.sh`（flock 防重入，日志 `ops/logs/ops-YYYYMMDD.log`，失败非零退出 + 同群 ⚠️ 告警）：
+
+```bash
+ops/daily.sh collect-and-push   # 采集 → 评分 → 推送（早 8:30）
+ops/daily.sh push-only          # 只推不采（晚 17:30）
+ops/daily.sh status             # 只读巡检：采集/评分/推送状态
+```
+
+- 推送选择：新岗（未推过 + 最终分≥60 + 近 7 天入库）与无反馈满 5 天重推岗（生命周期最多 2 次）合并 Top 15，最终分降序；`push_log` 岗位级记录，仅推送成功才写（失败重试天然同批，at-least-once）；无候选静默不推
+- **触发层**：Claw 云端定时（移交三步见 M4 文档 §3.5）；不稳时退回 crontab——条目在 `ops/crontab.example`，`crontab -e` 粘贴两行即切换（先停用 Claw 定时避免双触发）
+- **内网接口**：`/internal/score`、`/internal/push`、`/internal/alert` 不挂 `/api` 前缀，nginx 不转发；api 端口仅绑 `127.0.0.1:3001` 供 ops 脚本使用
+- 密钥（webhook、Moonshot key）只入服务器 `.env`，不进 git；评分/推送缺失配置时自动降级不失能
+
 ## 里程碑
 
 | 里程碑 | 内容 | 状态 |
@@ -120,5 +137,5 @@ docker compose --profile manual run --rm collector
 | M1 | Portal 骨架 | ✅ |
 | M2 | Postgres + Hono API + Docker Compose 部署 | ✅ |
 | M3 | Python 采集脚本：岗位抓取、清洗、去重（dedup_key）（本仓库当前状态） | ✅ |
-| M4 | 匹配打分 + 飞书机器人推送 + 反馈回写偏好（动态权重）＋ **绑域名 + 免费 HTTPS 证书**（届时 `crypto.randomUUID` 原生可用，Basic Auth 凭据传输加密） | 未开始 |
+| M4 | LLM 主导匹配打分 + 飞书机器人推送 + 反馈回写 + ops 编排 | 施工中 |
 | M5 | AI 助手真能力：LLM 后端代理 + 对话记忆 + 附件对象存储 | 未开始 |

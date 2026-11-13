@@ -34,6 +34,9 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    ports:
+      # 仅绑定 loopback：ops 脚本与调试用（/internal 无公网面，nginx 仍只转 /api）
+      - '127.0.0.1:3001:3001'
     healthcheck:
       test:
         [

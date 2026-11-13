@@ -1,0 +1,11 @@
+# NextCareer M4 crontab 兜底（§3.5：Claw 云端触发不稳时的退回方案，脚本零改动）
+#
+# 切换方法：
+#   1. 确认 Claw 定时已停用（避免双触发——daily.sh 有 flock，双触发最多空转，但别依赖）
+#   2. 服务器上执行 crontab -e，粘贴下面两行
+#   3. 观察一周 ops/logs/ops-*.log
+#
+# 时区：服务器本地时间（CST 上海）。daily.sh 自带 flock 与日志落盘。
+
+30 8  * * *  /opt/nextcareer/ops/daily.sh collect-and-push >> /opt/nextcareer/ops/logs/cron.log 2>&1
+30 17 * * *  /opt/nextcareer/ops/daily.sh push-only         >> /opt/nextcareer/ops/logs/cron.log 2>&1
