@@ -8,7 +8,7 @@ import { PROMPT_VERSION, systemPrompt, userPrompt } from './scorePrompt'
 const BASE_URL = process.env.MOONSHOT_BASE_URL || 'https://api.moonshot.cn/v1'
 const MODEL = process.env.MOONSHOT_MODEL || 'kimi-k3'
 const REQUEST_TIMEOUT_MS = 45_000
-const PACE_MS = 200 // 串行低频发评，避免突发
+const PACE_MS = 1000 // 串行低频发评；该账号 RPM 上限低（429 由重试兜底）
 
 export interface LlmResult {
   score: number
@@ -57,6 +57,22 @@ export async function scoreJobWithLLM(
     console.error('[llm] MOONSHOT_API_KEY 未配置，评分跳过（降级规则分）')
     return null
   }
+  // 429 限流重试（该账号 RPM 上限低，实测错误提示 1s 后可重试）；其余 4xx/5xx 不重试
+  const backoffMs = [0, 2000, 4000, 8000]
+  for (let attempt = 0; attempt < backoffMs.length; attempt++) {
+    if (attempt > 0) await new Promise((r) => setTimeout(r, backoffMs[attempt]))
+    const result = await callLLM(job, prefs, apiKey)
+    if (result === 'retry') continue
+    return result
+  }
+  return null
+}
+
+async function callLLM(
+  job: Parameters<typeof scoreJobWithLLM>[0],
+  prefs: Prefs,
+  apiKey: string,
+): Promise<LlmResult | 'retry' | null> {
   try {
     const resp = await fetch(`${BASE_URL}/chat/completions`, {
       method: 'POST',
@@ -76,6 +92,7 @@ export async function scoreJobWithLLM(
       }),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     })
+    if (resp.status === 429) return 'retry'
     if (!resp.ok) {
       console.error(`[llm] HTTP ${resp.status}: ${(await resp.text()).slice(0, 200)}`)
       return null
