@@ -2,8 +2,9 @@ import { createHash } from 'node:crypto'
 import { desc, eq, inArray, sql } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { feedbackEvents, jobs } from '../../../db/schema'
+import { feedbackEvents, jobs, preferences } from '../../../db/schema'
 import { db } from '../db'
+import { buildScore, feedbackAdjustments, type JobRow, type Prefs } from '../scoring'
 
 const feedbackSchema = z.object({
   action: z.enum(['interested', 'pass', 'applied']),
@@ -29,29 +30,57 @@ const ingestSchema = z.object({
 })
 
 export const jobsRoute = new Hono()
-  // listJobs(status?)：状态由最新一条反馈事件派生
+  // listJobs(status?, sort?)：状态由最新一条反馈事件派生；M4 起附可解释打分
+  // sort=score（默认）：最终排序分降序、同分 posted_at 新→旧、30 天无反馈沉底
+  // sort=time：采集时间倒序（全量）
   .get('/', async (c) => {
     const status = c.req.query('status')
+    const sort = c.req.query('sort') ?? 'score'
     const allJobs = await db.select().from(jobs).orderBy(desc(jobs.collectedAt))
     const events = await db
       .select()
       .from(feedbackEvents)
       .orderBy(desc(feedbackEvents.createdAt))
+    const [prefRow] = await db.select().from(preferences).limit(1)
+    const prefs: Prefs = {
+      roles: prefRow?.roles ?? [],
+      locations: prefRow?.locations ?? [],
+      salaryMin: prefRow?.salaryMin ?? null,
+      keywordsInclude: prefRow?.keywordsInclude ?? [],
+      keywordsExclude: prefRow?.keywordsExclude ?? [],
+      experienceMin: prefRow?.experienceMin ?? null,
+      backgroundText: prefRow?.backgroundText ?? null,
+    }
 
     const latestByJob = new Map<string, (typeof events)[number]>()
     for (const e of events) {
       if (!latestByJob.has(e.jobId)) latestByJob.set(e.jobId, e)
     }
 
+    const now = new Date()
+    const adjustments = feedbackAdjustments(allJobs, events, prefs, now)
     let result = allJobs.map((job) => {
       const jobEvents = events.filter((e) => e.jobId === job.id)
       return {
         ...job,
         status: (latestByJob.get(job.id)?.action ?? 'new') as string,
         feedbackEvents: jobEvents,
+        score: buildScore(job as JobRow, prefs, adjustments.get(job.id), now),
       }
     })
     if (status) result = result.filter((j) => j.status === status)
+    if (sort === 'score') {
+      const postedTime = (d: string | null) => (d ? new Date(d).getTime() : 0)
+      const stale = (j: (typeof result)[number]) =>
+        j.status === 'new' && now.getTime() - j.collectedAt.getTime() > 30 * 86400000
+      result = [...result].sort((a, b) => {
+        const sinkA = stale(a) ? 1 : 0
+        const sinkB = stale(b) ? 1 : 0
+        if (sinkA !== sinkB) return sinkA - sinkB // 30 天无反馈沉底
+        if (b.score.final !== a.score.final) return b.score.final - a.score.final
+        return postedTime(b.postedAt) - postedTime(a.postedAt)
+      })
+    }
     return c.json(result)
   })
 
