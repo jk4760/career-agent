@@ -92,10 +92,13 @@ def feishu_hire_api(
         try:
             resp = client.post(url, params={**FEISHU_QUERY, "offset": str(offset)}, json=body, headers=headers)
             resp.raise_for_status()
+            data = (resp.json() or {}).get("data") or {}
         except httpx.HTTPError as e:
             log.warning("飞书招聘接口失败 %s：%s", name, e)
             break
-        data = (resp.json() or {}).get("data") or {}
+        except ValueError:
+            log.warning("飞书招聘接口返回非 JSON（疑似拦截页）%s", name)
+            break
         posts = data.get("job_post_list") or []
         total = data.get("count") or 0
         log.info("%s：第 %d 页 %d 条（在招共 %d）", name, page + 1, len(posts), total)
@@ -177,10 +180,13 @@ def tencent_api(
                 },
             )
             resp.raise_for_status()
+            data = (resp.json() or {}).get("Data") or {}
         except httpx.HTTPError as e:
             log.warning("腾讯接口失败 %s：%s", name, e)
             break
-        data = (resp.json() or {}).get("Data") or {}
+        except ValueError:
+            log.warning("腾讯接口返回非 JSON（疑似拦截页）%s", name)
+            break
         posts = data.get("Posts") or []
         total = data.get("Count") or 0
         log.info("%s：第 %d 页 %d 条（在招共 %d）", name, page, len(posts), total)
@@ -234,7 +240,7 @@ def bilibili_api(
             headers={"User-Agent": UA},
         )
         csrf = (token_resp.json() or {}).get("data") or ""
-    except httpx.HTTPError:
+    except (httpx.HTTPError, ValueError):
         csrf = ""
     if not csrf:
         csrf = str(uuid.uuid4())
@@ -267,10 +273,13 @@ def bilibili_api(
         try:
             resp = client.post(url, json=body, headers=headers)
             resp.raise_for_status()
+            payload = resp.json() or {}
         except httpx.HTTPError as e:
             log.warning("B 站接口失败 %s：%s", name, e)
             break
-        payload = resp.json() or {}
+        except ValueError:
+            log.warning("B 站接口返回非 JSON（疑似拦截页）%s", name)
+            break
         if payload.get("code") != 0:
             log.warning("B 站接口返回错误 %s：%s", name, payload.get("message"))
             break
@@ -341,10 +350,13 @@ def greenhouse_api(
     try:
         resp = client.get(url, params={"content": "true"}, headers={"User-Agent": UA})
         resp.raise_for_status()
+        posts = (resp.json() or {}).get("jobs") or []
     except httpx.HTTPError as e:
         log.warning("Greenhouse 接口失败 %s：%s", name, e)
         return []
-    posts = (resp.json() or {}).get("jobs") or []
+    except ValueError:
+        log.warning("Greenhouse 接口返回非 JSON（疑似拦截页）%s", name)
+        return []
     log.info("%s：获取岗位 %d 条", name, len(posts))
     return [_map_greenhouse_post(name, p) for p in posts]
 
@@ -383,10 +395,13 @@ def ashby_api(
     try:
         resp = client.get(url, headers={"User-Agent": UA})
         resp.raise_for_status()
+        posts = (resp.json() or {}).get("jobs") or []
     except httpx.HTTPError as e:
         log.warning("Ashby 接口失败 %s：%s", name, e)
         return []
-    posts = (resp.json() or {}).get("jobs") or []
+    except ValueError:
+        log.warning("Ashby 接口返回非 JSON（疑似拦截页）%s", name)
+        return []
     log.info("%s：获取岗位 %d 条", name, len(posts))
     return [_map_ashby_post(name, p) for p in posts]
 
@@ -524,10 +539,13 @@ def alibaba_api(
         try:
             resp = client.post(url, params={"_csrf": csrf}, json=body, headers=headers)
             resp.raise_for_status()
+            payload = resp.json() or {}
         except httpx.HTTPError as e:
             log.warning("阿里接口失败 %s：%s", name, e)
             break
-        payload = resp.json() or {}
+        except ValueError:
+            log.warning("阿里接口返回非 JSON（疑似拦截页）%s", name)
+            break
         if not payload.get("success"):
             log.warning("阿里接口返回错误 %s：%s", name, payload.get("errorMsg"))
             break

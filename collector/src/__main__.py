@@ -107,11 +107,7 @@ def run() -> int:
 
             job["_jd_text"] = jd_text
             job["description"] = jd_text
-            ok, reason = match(
-                {**job, "require_work_years": job.get("_require_work_years", "")},
-                prefs,
-                jd_text,
-            )
+            ok, reason = match(job, prefs, jd_text)
             if not ok:
                 filtered[reason] = filtered.get(reason, 0) + 1
                 continue

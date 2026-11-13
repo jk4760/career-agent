@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { desc, eq, sql } from 'drizzle-orm'
+import { desc, eq, inArray, sql } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { feedbackEvents, jobs } from '../../../db/schema'
@@ -73,15 +73,34 @@ export const jobsRoute = new Hono()
   .post('/ingest', async (c) => {
     const parsed = ingestSchema.safeParse(await c.req.json())
     if (!parsed.success) return c.json({ error: parsed.error.issues }, 400)
-    const values = parsed.data.jobs.map((j) => ({
-      ...j,
-      location: j.location ?? null,
-      salaryMin: j.salaryMin ?? null,
-      salaryMax: j.salaryMax ?? null,
-      postedAt: j.postedAt ?? null,
-      dedupKey: createHash('md5').update(j.source + j.sourceUrl).digest('hex'),
-    }))
-    // xmax = 0 → 本次新插入；xmax ≠ 0 → 走了 ON CONFLICT DO UPDATE（即补回 JD）
+    const seen = new Set<string>()
+    const values = parsed.data.jobs
+      .map((j) => ({
+        ...j,
+        location: j.location ?? null,
+        salaryMin: j.salaryMin ?? null,
+        salaryMax: j.salaryMax ?? null,
+        postedAt: j.postedAt ?? null,
+        dedupKey: createHash('md5').update(j.source + j.sourceUrl).digest('hex'),
+      }))
+      .filter((v) => {
+        if (seen.has(v.dedupKey)) return false
+        seen.add(v.dedupKey)
+        return true
+      })
+    if (!values.length) return c.json({ inserted: 0, updated: 0, skipped: 0 }, 201)
+    // 确定性计数：先查出现有记录，算出「原 JD 为空且本次带非空 JD」的冲突行数 = updated
+    const existing = await db
+      .select({ dedupKey: jobs.dedupKey, description: jobs.description })
+      .from(jobs)
+      .where(
+        inArray(
+          jobs.dedupKey,
+          values.map((v) => v.dedupKey),
+        ),
+      )
+    const emptyDesc = new Set(existing.filter((e) => !e.description).map((e) => e.dedupKey))
+    const willUpdate = values.filter((v) => emptyDesc.has(v.dedupKey) && v.description).length
     const rows = await db
       .insert(jobs)
       .values(values)
@@ -90,9 +109,10 @@ export const jobsRoute = new Hono()
         set: { description: sql`excluded.description` },
         setWhere: sql`coalesce(${jobs.description}, '') = '' and excluded.description <> ''`,
       })
-      .returning({ id: jobs.id, isInsert: sql<boolean>`(xmax = 0)` })
-    const inserted = rows.filter((r) => r.isInsert).length
-    const updated = rows.length - inserted
+      .returning({ id: jobs.id })
+    // 返回行 = 新插入 + 真实 update（setWhere 未生效的冲突行不返回），updated 取预算口径
+    const updated = willUpdate
+    const inserted = rows.length - updated
     return c.json({ inserted, updated, skipped: values.length - rows.length }, 201)
   })
 

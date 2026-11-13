@@ -97,9 +97,11 @@ def match(job: dict, prefs: dict, jd_text: str) -> tuple[bool, str]:
         return False, "薪资上限低于偏好下限"
 
     # 3. 职级/年限：提取不到则放行（不误杀）
+    # 结构化字段两种键名都读（猎聘 require_work_years / 官网 _require_work_years），JD 文本兜底
     exp_min_pref = prefs.get("experience_min")
     if exp_min_pref:
-        years = extract_max_years(job.get("require_work_years") or "") or extract_max_years(jd_text)
+        years_text = job.get("require_work_years") or job.get("_require_work_years") or ""
+        years = extract_max_years(years_text) or extract_max_years(jd_text)
         if years is not None and years > exp_min_pref:
             return False, f"经验要求 {years} 年超过上限 {exp_min_pref}"
 
