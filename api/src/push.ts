@@ -77,6 +77,11 @@ export async function selectCandidates(prefs: Prefs, now: Date): Promise<Candida
   const pushCount = new Map<string, number>()
   const firstPushAt = new Map<string, Date>()
   const jobsWithFeedback = new Set(events.map((e) => e.jobId))
+  // 派生状态：点过「不合适」（最新反馈为 pass）的岗位永不进入推送候选（§3.6-13）
+  const latestActionByJob = new Map<string, string>()
+  for (const e of events) {
+    if (!latestActionByJob.has(e.jobId)) latestActionByJob.set(e.jobId, e.action)
+  }
   for (const r of pushRows) {
     if (!r.jobId) continue
     pushCount.set(r.jobId, (pushCount.get(r.jobId) ?? 0) + 1)
@@ -86,6 +91,7 @@ export async function selectCandidates(prefs: Prefs, now: Date): Promise<Candida
 
   const candidates: Candidate[] = []
   for (const job of allJobs) {
+    if (latestActionByJob.get(job.id) === 'pass') continue
     const pushes = pushCount.get(job.id) ?? 0
     const score = buildScore(job, prefs, adjustments.get(job.id), now)
     if (pushes === 0) {
