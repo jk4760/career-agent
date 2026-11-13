@@ -23,6 +23,12 @@ services:
     environment:
       DATABASE_URL: postgres://${DB_USER:-nextcareer}:${DB_PASSWORD}@db:5432/${DB_NAME:-nextcareer}
       UPLOAD_DIR: /var/lib/nextcareer/uploads
+      # M4：LLM 评分与飞书推送（只从 .env 读，缺省为空 → 评分降级规则分、推送报未配置）
+      MOONSHOT_API_KEY: ${MOONSHOT_API_KEY:-}
+      MOONSHOT_BASE_URL: ${MOONSHOT_BASE_URL:-}
+      MOONSHOT_MODEL: ${MOONSHOT_MODEL:-}
+      FEISHU_WEBHOOK_URL: ${FEISHU_WEBHOOK_URL:-}
+      FEISHU_WEBHOOK_SECRET: ${FEISHU_WEBHOOK_SECRET:-}
     volumes:
       - uploads:/var/lib/nextcareer/uploads
     depends_on:

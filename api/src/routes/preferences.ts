@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { z } from 'zod'
 import { preferences } from '../../../db/schema'
 import { db } from '../db'
+import { runScoring } from '../llm/scorer'
 
 const preferencesSchema = z.object({
   id: z.string().uuid(),
@@ -48,5 +49,18 @@ export const preferencesRoute = new Hono()
         },
       })
       .returning()
+    // M4 重评触发②：偏好/个人背景变更 → 异步重评近 60 天岗位（失败降级不阻塞保存）
+    void runScoring(
+      {
+        roles: saved.roles ?? [],
+        locations: saved.locations ?? [],
+        salaryMin: saved.salaryMin ?? null,
+        keywordsInclude: saved.keywordsInclude ?? [],
+        keywordsExclude: saved.keywordsExclude ?? [],
+        experienceMin: saved.experienceMin ?? null,
+        backgroundText: saved.backgroundText ?? null,
+      },
+      { sinceDays: 60, async: true },
+    ).catch((e) => console.error('[llm] 偏好变更重评触发失败:', e))
     return c.json(saved)
   })
