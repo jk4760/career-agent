@@ -12,6 +12,8 @@ const preferencesSchema = z.object({
   keywordsInclude: z.array(z.string()),
   keywordsExclude: z.array(z.string()),
   experienceMin: z.number().int().nullable().optional(),
+  // M4：个人背景自述；不传则不动该字段（兼容旧客户端全量保存）
+  backgroundText: z.string().nullable().optional(),
   updatedAt: z.string(),
 })
 
@@ -41,6 +43,7 @@ export const preferencesRoute = new Hono()
           keywordsInclude: p.keywordsInclude,
           keywordsExclude: p.keywordsExclude,
           experienceMin: p.experienceMin ?? null,
+          ...(p.backgroundText !== undefined ? { backgroundText: p.backgroundText } : {}),
           updatedAt: new Date(),
         },
       })

@@ -15,6 +15,13 @@
       "when": 1794372782234,
       "tag": "0001_sharp_whizzer",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794537924365,
+      "tag": "0002_high_psylocke",
+      "breakpoints": true
     }
   ]
 }

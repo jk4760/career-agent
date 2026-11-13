@@ -30,6 +30,13 @@ export const jobs = pgTable('jobs', {
   postedAt: date('posted_at'),
   collectedAt: timestamp('collected_at', { withTimezone: true }).notNull().defaultNow(),
   dedupKey: text('dedup_key').notNull().unique(),
+  /** M4：LLM 主导分缓存；NULL = 未评分/评分失败（走规则分降级） */
+  llmEval: jsonb('llm_eval').$type<{
+    score: number
+    reasons: string[]
+    prompt_version: string
+    scored_at: string
+  }>(),
 })
 
 export const feedbackEvents = pgTable(
@@ -40,6 +47,8 @@ export const feedbackEvents = pgTable(
       .notNull()
       .references(() => jobs.id),
     action: text('action').notNull(),
+    /** M4：结构化反馈维度——不合适必选六选一（职能/薪资/地点/职级/公司/其他）；感兴趣可选三选 */
+    reason: text('reason'),
     comment: text('comment'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -62,6 +71,8 @@ export const preferences = pgTable('preferences', {
   keywordsExclude: text('keywords_exclude').array(),
   /** M3：可接受的岗位经验要求上限（年）；NULL = 不限 */
   experienceMin: integer('experience_min'),
+  /** M4：个人背景自述（300–500 字），注入 LLM 评分；保存触发近 60 天岗位重评 */
+  backgroundText: text('background_text'),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
