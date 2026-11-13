@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { preferences } from '../../../db/schema'
 import { db } from '../db'
 import { runScoring, scoreRunState } from '../llm/scorer'
+import { pushJobs, selectCandidates, sendAlert } from '../push'
 import type { Prefs } from '../scoring'
 
 const scoreSchema = z.object({
@@ -39,3 +40,40 @@ export const internalRoute = new Hono()
   })
 
   .get('/score/status', (c) => c.json(scoreRunState()))
+
+  // 推送：daily.sh 调用。mode 仅作日志标记（collect-and-push / push-only 选择逻辑一致）
+  .post('/push', async (c) => {
+    const body = await c.req.json().catch(() => ({}))
+    const mode = typeof body.mode === 'string' ? body.mode : 'push-only'
+    console.log(`[push] 开始推送（mode=${mode}）`)
+    const prefs = await loadPrefs()
+    const result = await pushJobs(prefs)
+    console.log(`[push] 结果：${JSON.stringify(result)}`)
+    return c.json(result, result.ok ? 200 : 500)
+  })
+
+  // 推送预览（自测用，不发消息不写 push_log）
+  .post('/push/preview', async (c) => {
+    const prefs = await loadPrefs()
+    const candidates = await selectCandidates(prefs, new Date())
+    return c.json(
+      candidates.map(({ job, score, kind }) => ({
+        id: job.id,
+        title: job.title,
+        company: job.company,
+        kind,
+        final: score.final,
+        llm: score.llm,
+        rule: score.rule,
+        feedback: score.feedback.total,
+      })),
+    )
+  })
+
+  // ⚠️ 告警：ops 脚本在采集/评分失败时调用
+  .post('/alert', async (c) => {
+    const body = await c.req.json().catch(() => ({}))
+    const text = typeof body.text === 'string' && body.text ? body.text : '未指明原因'
+    const result = await sendAlert(text)
+    return c.json(result, result.ok ? 200 : 500)
+  })
