@@ -5,8 +5,8 @@ import { db } from '../db'
 import type { Prefs } from '../scoring'
 import { PROMPT_VERSION, systemPrompt, userPrompt } from './scorePrompt'
 
-const BASE_URL = process.env.MOONSHOT_BASE_URL ?? 'https://api.moonshot.cn/v1'
-const MODEL = process.env.MOONSHOT_MODEL ?? 'moonshot-v1-8k'
+const BASE_URL = process.env.MOONSHOT_BASE_URL || 'https://api.moonshot.cn/v1'
+const MODEL = process.env.MOONSHOT_MODEL || 'moonshot-v1-8k'
 const REQUEST_TIMEOUT_MS = 45_000
 const PACE_MS = 200 // 串行低频发评，避免突发
 
