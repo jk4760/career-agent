@@ -66,7 +66,8 @@ export async function scoreJobWithLLM(
       },
       body: JSON.stringify({
         model: MODEL,
-        temperature: 0,
+        // 注意：kimi-k3 系仅允许 temperature=1（2026-11 实测 400 拒绝其他值），
+        // 故不传 temperature；压抖动依赖锚定 rubric + json_object 结构化输出 + 校准示例
         response_format: { type: 'json_object' },
         messages: [
           { role: 'system', content: systemPrompt() },
