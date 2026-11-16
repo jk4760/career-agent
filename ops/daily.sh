@@ -44,7 +44,8 @@ cmd_collect_and_push() {
   fi
   log "采集完成，开始评分（同步，推送前必须就绪）"
   local score_resp
-  if ! score_resp=$(curl -fsS -m 1800 -X POST "$API/internal/score" \
+  # 修复批项 2：RPM=3 下 60 条上限约 25–40 分钟，超时给到 90 分钟
+  if ! score_resp=$(curl -fsS -m 5400 -X POST "$API/internal/score" \
       -H 'Content-Type: application/json' -d '{}'); then
     die "评分接口调用失败（推送中止，岗位按规则分留待下轮）"
   fi

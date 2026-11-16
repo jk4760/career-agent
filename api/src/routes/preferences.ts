@@ -31,6 +31,8 @@ export const preferencesRoute = new Hono()
     const parsed = preferencesSchema.safeParse(await c.req.json())
     if (!parsed.success) return c.json({ error: parsed.error.issues }, 400)
     const p = parsed.data
+    // 修复批项 1.4：先 diff 七字段再决定是否触发重评（修「任何保存都触发」）
+    const [before] = await db.select().from(preferences).limit(1)
     const [saved] = await db
       .insert(preferences)
       .values({ ...p, updatedAt: new Date() })
@@ -49,18 +51,33 @@ export const preferencesRoute = new Hono()
         },
       })
       .returning()
-    // M4 重评触发②：偏好/个人背景变更 → 异步重评近 60 天岗位（失败降级不阻塞保存）
-    void runScoring(
-      {
-        roles: saved.roles ?? [],
-        locations: saved.locations ?? [],
-        salaryMin: saved.salaryMin ?? null,
-        keywordsInclude: saved.keywordsInclude ?? [],
-        keywordsExclude: saved.keywordsExclude ?? [],
-        experienceMin: saved.experienceMin ?? null,
-        backgroundText: saved.backgroundText ?? null,
-      },
-      { sinceDays: 60, async: true },
-    ).catch((e) => console.error('[llm] 偏好变更重评触发失败:', e))
+    const listEq = (a: string[] | null, b: string[] | null) =>
+      (a ?? []).join('') === (b ?? []).join('')
+    const changed =
+      !before ||
+      !listEq(before.roles, saved.roles) ||
+      !listEq(before.locations, saved.locations) ||
+      (before.salaryMin ?? null) !== (saved.salaryMin ?? null) ||
+      !listEq(before.keywordsInclude, saved.keywordsInclude) ||
+      !listEq(before.keywordsExclude, saved.keywordsExclude) ||
+      (before.experienceMin ?? null) !== (saved.experienceMin ?? null) ||
+      (before.backgroundText ?? null) !== (saved.backgroundText ?? null)
+    if (changed) {
+      // M4 重评触发②：偏好/个人背景实际变更 → 异步重评近 60 天岗位（受 60 条/次上限约束）
+      void runScoring(
+        {
+          roles: saved.roles ?? [],
+          locations: saved.locations ?? [],
+          salaryMin: saved.salaryMin ?? null,
+          keywordsInclude: saved.keywordsInclude ?? [],
+          keywordsExclude: saved.keywordsExclude ?? [],
+          experienceMin: saved.experienceMin ?? null,
+          backgroundText: saved.backgroundText ?? null,
+        },
+        { sinceDays: 60, async: true },
+      ).catch((e) => console.error('[llm] 偏好变更重评触发失败:', e))
+    } else {
+      console.log('[llm] 偏好七字段无实际变化，不触发重评')
+    }
     return c.json(saved)
   })

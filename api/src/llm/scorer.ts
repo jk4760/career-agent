@@ -1,14 +1,17 @@
 // M4 施工项 3：LLM 评分执行器（Moonshot/Kimi API；失败降级留空，永不阻塞采集与推送）
-import { desc, eq, isNull, or, sql } from 'drizzle-orm'
+// M4 修复批（2026-11-16）：预算闸门（默认只补未评分 + 单次硬上限 60）、
+// 干跑分解日志、429 退避、per-job 失败明细、k3.1-pro + reasoning_effort=low 降本
+import { desc, eq, sql } from 'drizzle-orm'
 import { jobs } from '../../../db/schema'
 import { db } from '../db'
 import type { Prefs } from '../scoring'
 import { PROMPT_VERSION, systemPrompt, userPrompt } from './scorePrompt'
 
 const BASE_URL = process.env.MOONSHOT_BASE_URL || 'https://api.moonshot.cn/v1'
-const MODEL = process.env.MOONSHOT_MODEL || 'kimi-k3'
+const MODEL = process.env.MOONSHOT_MODEL || 'kimi-k3.1-pro' // 输入 ¥13/输出 ¥68 per M，比 k3 便宜 ~40%
 const REQUEST_TIMEOUT_MS = 45_000
 const PACE_MS = 1000 // 串行低频发评；该账号 RPM 上限低（429 由重试兜底）
+const MAX_PER_RUN = 60 // 单次评分硬上限（修复批项 1.2），超出顺延不得静默扩大
 
 export interface LlmResult {
   score: number
@@ -42,8 +45,15 @@ export function scoreRunState(): ScoreRunState {
   return { ...state }
 }
 
+export interface ScoreOutcome {
+  result: LlmResult | null
+  /** 失败原因（HTTP 状态码 + 错误前 200 字符）；成功时为 null */
+  error: string | null
+}
+
 export async function scoreJobWithLLM(
   job: {
+    id?: string
     title: string
     company: string
     location: string | null
@@ -52,28 +62,37 @@ export async function scoreJobWithLLM(
     description: string | null
   },
   prefs: Prefs,
-): Promise<LlmResult | null> {
+): Promise<ScoreOutcome> {
   const apiKey = process.env.MOONSHOT_API_KEY
   if (!apiKey) {
-    console.error('[llm] MOONSHOT_API_KEY 未配置，评分跳过（降级规则分）')
-    return null
+    return { result: null, error: 'MOONSHOT_API_KEY 未配置（降级规则分）' }
   }
   // 429 限流重试（该账号 RPM 上限低，实测错误提示 1s 后可重试）；其余 4xx/5xx 不重试
   const backoffMs = [0, 2000, 4000, 8000]
+  let lastError = 'unknown'
   for (let attempt = 0; attempt < backoffMs.length; attempt++) {
     if (attempt > 0) await new Promise((r) => setTimeout(r, backoffMs[attempt]))
-    const result = await callLLM(job, prefs, apiKey)
-    if (result === 'retry') continue
-    return result
+    const outcome = await callLLM(job, prefs, apiKey)
+    if (outcome.kind === 'retry') {
+      lastError = 'HTTP 429 限流（重试耗尽）'
+      continue
+    }
+    if (outcome.kind === 'fail') return { result: null, error: outcome.error }
+    return { result: outcome.result, error: null }
   }
-  return null
+  return { result: null, error: lastError }
 }
+
+type CallOutcome =
+  | { kind: 'ok'; result: LlmResult }
+  | { kind: 'retry' }
+  | { kind: 'fail'; error: string }
 
 async function callLLM(
   job: Parameters<typeof scoreJobWithLLM>[0],
   prefs: Prefs,
   apiKey: string,
-): Promise<LlmResult | 'retry' | null> {
+): Promise<CallOutcome> {
   try {
     const resp = await fetch(`${BASE_URL}/chat/completions`, {
       method: 'POST',
@@ -83,7 +102,8 @@ async function callLLM(
       },
       body: JSON.stringify({
         model: MODEL,
-        // 注意：kimi-k3 系仅允许 temperature=1（2026-11 实测 400 拒绝其他值），
+        reasoning_effort: 'low', // 岗位评分是轻量判断任务，压低推理成本
+        // 注意：k3 系仅允许 temperature=1（2026-11 实测 400 拒绝其他值），
         // 故不传 temperature；压抖动依赖锚定 rubric + json_object 结构化输出 + 校准示例
         response_format: { type: 'json_object' },
         messages: [
@@ -93,10 +113,9 @@ async function callLLM(
       }),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     })
-    if (resp.status === 429) return 'retry'
+    if (resp.status === 429) return { kind: 'retry' }
     if (!resp.ok) {
-      console.error(`[llm] HTTP ${resp.status}: ${(await resp.text()).slice(0, 200)}`)
-      return null
+      return { kind: 'fail', error: `HTTP ${resp.status}: ${(await resp.text()).slice(0, 200)}` }
     }
     const data = (await resp.json()) as {
       choices?: { message?: { content?: string } }[]
@@ -105,8 +124,7 @@ async function callLLM(
     const parsed = JSON.parse(content) as { score?: unknown; reasons?: unknown }
     const score = Number(parsed.score)
     if (!Number.isFinite(score) || score < 0 || score > 100) {
-      console.error(`[llm] 非法分数输出: ${content.slice(0, 120)}`)
-      return null
+      return { kind: 'fail', error: `非法分数输出: ${content.slice(0, 120)}` }
     }
     const reasons = Array.isArray(parsed.reasons)
       ? parsed.reasons.filter((r): r is string => typeof r === 'string').slice(0, 2)
@@ -115,14 +133,23 @@ async function callLLM(
       typeof (parsed as { highlight?: unknown }).highlight === 'string'
         ? ((parsed as { highlight: string }).highlight.slice(0, 60) as string)
         : ''
-    return { score: Math.round(score), reasons, highlight }
+    return { kind: 'ok', result: { score: Math.round(score), reasons, highlight } }
   } catch (e) {
-    console.error(`[llm] 调用失败: ${e instanceof Error ? e.message : e}`)
-    return null
+    return { kind: 'fail', error: `调用异常: ${e instanceof Error ? e.message : e}` }
   }
 }
 
 type TargetRow = typeof jobs.$inferSelect
+
+/** 干跑分解（修复批项 0）：正式调用 API 前打印目标构成，解释每次队列怎么算出来的 */
+function breakdownOf(rows: TargetRow[]): string {
+  const unscored = rows.filter((r) => !r.llmEval).length
+  const staleV10 = rows.filter((r) => r.llmEval?.prompt_version === 'v1.0').length
+  const staleOther = rows.filter(
+    (r) => r.llmEval && r.llmEval.prompt_version !== PROMPT_VERSION && r.llmEval.prompt_version !== 'v1.0',
+  ).length
+  return `unscored=${unscored} / stale-v1.0=${staleV10} / stale-其他=${staleOther} / 合计=${rows.length}`
+}
 
 async function pickTargets(opts: {
   jobIds?: string[]
@@ -136,10 +163,13 @@ async function pickTargets(opts: {
       const [row] = await db.select().from(jobs).where(eq(jobs.id, id))
       if (row) rows.push(row)
     }
+    console.log(`[llm] 干跑：显式 jobIds=${rows.length}`)
     return rows
   }
   if (opts.all) {
-    return db.select().from(jobs).orderBy(desc(jobs.collectedAt))
+    const rows = await db.select().from(jobs).orderBy(desc(jobs.collectedAt))
+    console.log(`[llm] 干跑（all=true 全量重评）：${breakdownOf(rows)}`)
+    return rows
   }
   const days = opts.sinceDays ?? 7
   const rows = await db
@@ -147,11 +177,12 @@ async function pickTargets(opts: {
     .from(jobs)
     .where(sql`collected_at > now() - make_interval(days => ${days})`)
     .orderBy(desc(jobs.collectedAt))
-  // 默认只补评：未评分或 prompt 版本过期；显式 sinceDays 重评（触发②）则全量重评
+  const policy = opts.sinceDays === undefined ? '默认（只补未评分）' : `显式重评近 ${days} 天`
+  console.log(`[llm] 干跑（${policy}）：池 ${breakdownOf(rows)}`)
+  // 修复批项 1.1/1.3：默认只评「近 7 天入库且未评分」；prompt_version 陈旧存量
+  // 不自动重评，只有显式传 sinceDays/all 才动（人工触发）
   if (opts.sinceDays === undefined) {
-    return rows.filter(
-      (r) => !r.llmEval || r.llmEval.prompt_version !== PROMPT_VERSION,
-    )
+    return rows.filter((r) => !r.llmEval)
   }
   return rows
 }
@@ -160,13 +191,18 @@ async function pickTargets(opts: {
  * 评分入口。async=false → 同步跑完返回计数（daily.sh 推送前调用）；
  * async=true → 后台跑（偏好变更/全量迁移），状态见 scoreRunState()。
  * 单实例互斥：已有评分在跑时新任务直接拒绝（daily.sh 下 run 会再来）。
+ * 单次硬上限 MAX_PER_RUN 条，超出顺延（修复批项 1.2）。
  */
 export async function runScoring(
   prefs: Prefs,
   opts: { jobIds?: string[]; sinceDays?: number; all?: boolean; async?: boolean },
 ): Promise<{ started: number; mode: 'sync' | 'async' | 'busy'; scored?: number; failed?: number }> {
   if (state.running) return { started: 0, mode: 'busy' }
-  const targets = await pickTargets(opts)
+  const picked = await pickTargets(opts)
+  const deferred = Math.max(0, picked.length - MAX_PER_RUN)
+  const targets = picked.slice(0, MAX_PER_RUN)
+  if (deferred > 0) console.log(`[llm] 单次上限 ${MAX_PER_RUN} 条：deferred=${deferred} 条，留待下次`)
+  console.log(`[llm] 本次评分目标 ${targets.length} 条`)
   if (!targets.length) return { started: 0, mode: opts.async ? 'async' : 'sync', scored: 0, failed: 0 }
 
   const execute = async () => {
@@ -180,7 +216,7 @@ export async function runScoring(
     state.lastError = null
     for (const job of targets) {
       try {
-        const result = await scoreJobWithLLM(job, prefs)
+        const { result, error } = await scoreJobWithLLM(job, prefs)
         if (result) {
           await db
             .update(jobs)
@@ -197,6 +233,8 @@ export async function runScoring(
           state.scored += 1
         } else {
           state.failed += 1 // 降级：llm_eval 保持 NULL，按规则分排序
+          state.lastError = error ?? 'unknown'
+          console.error(`[llm] 评分失败 job=${job.id}：${state.lastError}`)
         }
       } catch (e) {
         state.failed += 1
