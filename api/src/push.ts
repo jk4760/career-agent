@@ -11,6 +11,7 @@ import { buildScore, feedbackAdjustments, type JobRow, type Prefs, type ScoreBre
 const PUSH_THRESHOLD = 60 // §3.6-18：LLM 分分布第一周观察后校准
 const TOP_N = 15
 const NEW_JOB_WINDOW_DAYS = 7 // 「日水位以来入库」的操作化边界（未推过才是真条件）
+const NEW_JOB_POSTED_MAX_DAYS = 45 // 修复批项 5.3：新岗运营门槛——发布超 45 天不进候选（null 放行）
 const REPUSH_AFTER_DAYS = 5
 
 const WEBHOOK_URL = () => process.env.FEISHU_WEBHOOK_URL ?? ''
@@ -103,9 +104,11 @@ export async function selectCandidates(prefs: Prefs, now: Date): Promise<Candida
     const pushes = pushCount.get(job.id) ?? 0
     const score = buildScore(job, prefs, adjustments.get(job.id), now)
     if (pushes === 0) {
-      // 新岗：未推过 + 最终分≥60 + 近 7 天入库
+      // 新岗：未推过 + 最终分≥60 + 近 7 天入库 + 发布未超 45 天（posted_at 为 null 放行）
       const ageMs = now.getTime() - job.collectedAt.getTime()
-      if (score.final >= PUSH_THRESHOLD && ageMs <= NEW_JOB_WINDOW_DAYS * 86400000) {
+      const postedMs = job.postedAt ? now.getTime() - new Date(job.postedAt).getTime() : null
+      const stalePosted = postedMs !== null && postedMs > NEW_JOB_POSTED_MAX_DAYS * 86400000
+      if (score.final >= PUSH_THRESHOLD && ageMs <= NEW_JOB_WINDOW_DAYS * 86400000 && !stalePosted) {
         candidates.push({ job, score, kind: 'new' })
       }
     } else if (pushes === 1) {

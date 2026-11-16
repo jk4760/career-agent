@@ -1,7 +1,7 @@
 // M4 施工项 3：LLM 评分 prompt（版本化入 git；升级 PROMPT_VERSION 触发全量重评）
 // 锚定评分标准 + 校准示例压抖动；temperature 0 + 结构化 JSON 输出
 
-export const PROMPT_VERSION = 'v1.1'
+export const PROMPT_VERSION = 'v1.2' // v1.2：明确不考虑新鲜度（新鲜度改推送侧运营门槛）
 
 export function systemPrompt(): string {
   return `你是求职匹配评分助手。根据候选人的个人背景与求职偏好，评估岗位与候选人的匹配度，输出 0–100 分。
@@ -13,7 +13,8 @@ export function systemPrompt(): string {
 - 30–49：边缘相关，只有间接经验可用
 - 0–29：明显不相关
 
-评分只看岗位与候选人的匹配事实，不因公司规模、知名度加减分。
+评分只看岗位与候选人的匹配事实，不因公司规模、知名度加减分；
+也不考虑岗位的发布时间长短/新鲜度——新鲜度由其他环节处理，与匹配度无关。
 
 输出严格 JSON，不要输出任何其他内容：
 {

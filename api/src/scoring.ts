@@ -38,7 +38,8 @@ export interface ScoreBreakdown {
   final: number
   llm: number | null
   rule: number
-  ruleDims: { role: number; salary: number; company: number; freshness: number; experience: number }
+  /** 修复批项 5：五维改四维，新鲜度移出评分（「7 天内」仅作事实标签） */
+  ruleDims: { role: number; salary: number; company: number; experience: number }
   usedFallback: boolean
   feedback: { total: number; items: { keyword: string; delta: number; action: string }[] }
   ruleFacts: string[]
@@ -122,7 +123,7 @@ function daysSince(dateStr: string | null, now: Date): number | null {
   return Math.floor((now.getTime() - d.getTime()) / 86400000)
 }
 
-/** 规则五维参考分（§3.2 计分档表；信息缺失一律中性档） */
+/** 规则四维参考分（修复批项 5：新鲜度移出评分；职能 40/薪资 20/公司 20/经验 20，信息缺失一律中性档） */
 export function ruleScore(
   job: JobRow,
   prefs: Prefs,
@@ -131,11 +132,11 @@ export function ruleScore(
   const jd = job.description || ''
   const facts: string[] = []
 
-  // 职能 30：title 精确命中 roles=30；title 命中 include=20；仅 JD 命中=10
+  // 职能 40：title 精确命中 roles=40；title 命中 include=28；仅 JD 命中=14
   let role = 0
-  if (hitAny(job.title, prefs.roles).length) role = 30
-  else if (hitAny(job.title, prefs.keywordsInclude).length) role = 20
-  else if (hitAny(jd, prefs.roles).length || hitAny(jd, prefs.keywordsInclude).length) role = 10
+  if (hitAny(job.title, prefs.roles).length) role = 40
+  else if (hitAny(job.title, prefs.keywordsInclude).length) role = 28
+  else if (hitAny(jd, prefs.roles).length || hitAny(jd, prefs.keywordsInclude).length) role = 14
 
   // 薪资 20：上限≥预期×1.2=20；≥预期=15；略低=5；面议/无数据=10（中性）
   let salary = 10
@@ -152,25 +153,23 @@ export function ruleScore(
   const company = tier.tier === 'star' ? 20 : tier.tier === 'watch' ? 12 : 5
   if (tier.tier === 'star') facts.push('★目标公司')
 
-  // 新鲜度 15：7 天内=15；30 天内=10；更老=5；无日期=7（中性）
+  // 新鲜度：不进分数（静态分不承载时变维度）；「7 天内」仅作事实标签
   const age = daysSince(job.postedAt, now)
-  let freshness = 7
-  if (age !== null) freshness = age <= 7 ? 15 : age <= 30 ? 10 : 5
   if (age !== null && age <= 7) facts.push('7 天内')
 
-  // 经验 15：上限≤experience_min=15；接近（+2 内）=10；提取不到=7（中性）
-  let experience = 7
+  // 经验 20：上限≤experience_min=20；接近（+2 内）=13；提取不到=10（中性）；远超=7
+  let experience = 10
   const years = extractMaxYears(jd)
   if (prefs.experienceMin && years !== null) {
-    if (years <= prefs.experienceMin) experience = 15
-    else if (years <= prefs.experienceMin + 2) experience = 10
-    else experience = 5
+    if (years <= prefs.experienceMin) experience = 20
+    else if (years <= prefs.experienceMin + 2) experience = 13
+    else experience = 7
   }
-  if (experience === 15) facts.push('经验匹配')
+  if (experience === 20) facts.push('经验匹配')
 
   return {
-    total: role + salary + company + freshness + experience,
-    dims: { role, salary, company, freshness, experience },
+    total: role + salary + company + experience,
+    dims: { role, salary, company, experience },
     facts,
   }
 }
