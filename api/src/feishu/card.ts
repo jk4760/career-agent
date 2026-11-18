@@ -169,10 +169,7 @@ export function buildPushCard(entries: CardJobEntry[], cardJobs: string[]): Json
     withHr.push(jobBlock(e, cardJobs))
   })
   withHr.push({ tag: 'hr' })
-  withHr.push({
-    tag: 'note',
-    elements: [plain('完整列表见 Web（岗位流按匹配分排序）')],
-  })
+  withHr.push(md("<font color='grey'>完整列表见 Web（岗位流按匹配分排序）</font>")) // v2 无 note 组件，用灰字 markdown
   return {
     schema: '2.0',
     config: { wide_screen_mode: true, update_multi: true },
