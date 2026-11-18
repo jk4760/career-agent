@@ -1,5 +1,8 @@
 // M4.5 施工项 1.3：三态卡片构建器（设计稿 §2.2/§2.3，全部飞书原生组件，不自绘颜色块）
-// 新卡片 schema 2.0（column_set 带边框；客户端不渲染时自然退化为无边框块，hr 兜底分隔）
+// 卡片 JSON 2.0（schema 2.0）实战要点（官方组件文档 + 实测）：
+// - 文本用 markdown 组件；按钮放 column_set→column.elements，behaviors:[{type:'callback'}] 才回传
+// - 分栏高亮用 background_style（border/background 属性不存在，im/v1 会 200621 拒收）
+// - 「查看 JD」走 behaviors open_url（链式按钮不触发回调）
 import { and, desc, eq, inArray, isNull } from 'drizzle-orm'
 import { feedbackEvents, jobs } from '../../../db/schema'
 import { db } from '../db'
@@ -40,8 +43,8 @@ export interface CardJobEntry {
   askReason?: boolean
 }
 
-function md(text: string) {
-  return { tag: 'lark_md', content: text }
+function md(content: string): Json {
+  return { tag: 'markdown', content }
 }
 function plain(text: string) {
   return { tag: 'plain_text', content: text }
@@ -55,41 +58,63 @@ function truncate(text: string, n: number): string {
   return t.length > n ? `${t.slice(0, n)}…` : t
 }
 
-function actionButton(
-  content: string,
-  type: string,
-  value: Record<string, unknown>,
-  url?: string,
-): Json {
-  const btn: Json = { tag: 'button', text: plain(content), type, value }
-  if (url) btn.url = url
-  return btn
+/** 回调按钮（点按回传 value 到 /feishu/callback） */
+function callbackButton(content: string, type: string, value: Record<string, unknown>): Json {
+  return {
+    tag: 'button',
+    text: plain(content),
+    type,
+    value,
+    behaviors: [{ type: 'callback' }],
+  }
+}
+
+/** 链接按钮（打开 URL，不触发回调） */
+function linkButton(content: string, type: string, url: string): Json {
+  return {
+    tag: 'button',
+    text: plain(content),
+    type,
+    behaviors: [{ type: 'open_url', default_url: url }],
+  }
+}
+
+/** 按钮行：column_set 每列一个按钮（源码对「全列皆按钮」按按钮行排版） */
+function buttonRow(buttons: Json[], flow = false): Json {
+  return {
+    tag: 'column_set',
+    flex_mode: flow ? 'flow' : 'none',
+    horizontal_spacing: 'medium',
+    columns: buttons.map((b) => ({
+      tag: 'column',
+      width: 'auto',
+      vertical_align: 'center',
+      elements: [b],
+    })),
+  }
 }
 
 /** 态① 操作区：感兴趣（红）｜不合适（灰）｜已投递（蓝）｜查看 JD →（蓝链接） */
 function actionRowState1(jobId: string, sourceUrl: string, cardJobs: string[]): Json {
-  return {
-    tag: 'action',
-    actions: [
-      actionButton('感兴趣', BUTTON_TYPE.interested, { jobId, action: 'interested', stage: 'submit', cardJobs }),
-      actionButton('不合适', BUTTON_TYPE.pass, { jobId, action: 'pass', stage: 'ask_reason', cardJobs }),
-      actionButton('已投递', BUTTON_TYPE.applied, { jobId, action: 'applied', stage: 'submit', cardJobs }),
-      actionButton('查看 JD →', BUTTON_TYPE.viewJd, { jobId, stage: 'view', cardJobs }, sourceUrl),
-    ],
-  }
+  return buttonRow([
+    callbackButton('感兴趣', BUTTON_TYPE.interested, { jobId, action: 'interested', stage: 'submit', cardJobs }),
+    callbackButton('不合适', BUTTON_TYPE.pass, { jobId, action: 'pass', stage: 'ask_reason', cardJobs }),
+    callbackButton('已投递', BUTTON_TYPE.applied, { jobId, action: 'applied', stage: 'submit', cardJobs }),
+    linkButton('查看 JD →', BUTTON_TYPE.viewJd, sourceUrl),
+  ])
 }
 
-/** 态② 原因选择（点「不合适」后原地替换，设计稿 §2.3） */
+/** 态② 原因选择（点「不合适」后原地替换，设计稿 §2.3；六按钮 flow 换行） */
 function actionRowState2(jobId: string, cardJobs: string[]): Json[] {
   return [
-    { tag: 'div', text: md('**不合适的原因是？**') },
-    {
-      tag: 'action',
-      actions: CARD_PASS_REASON_LABELS.map((label) =>
-        actionButton(label, 'default', { jobId, action: 'pass', stage: 'submit', reason: label, cardJobs }),
+    md('**不合适的原因是？**'),
+    buttonRow(
+      CARD_PASS_REASON_LABELS.map((label) =>
+        callbackButton(label, 'default', { jobId, action: 'pass', stage: 'submit', reason: label, cardJobs }),
       ),
-    },
-    { tag: 'div', text: md('点选即提交 · 10 分钟内可撤销') },
+      true,
+    ),
+    md('点选即提交 · 10 分钟内可撤销'),
   ]
 }
 
@@ -99,56 +124,49 @@ function actionRowState3(entry: CardJobEntry, cardJobs: string[]): Json[] {
   const actionLabel =
     fb.action === 'pass' ? '不合适' : fb.action === 'interested' ? '感兴趣' : '已投递'
   const reasonText = fb.reason ? ` · ${fb.reason}` : ''
-  const rows: Json[] = [
-    {
-      tag: 'div',
-      text: md(`<font color='green'>✓ 已标记：${actionLabel}${reasonText}</font>`),
-    },
-  ]
+  const rows: Json[] = [md(`<font color='green'>✓ 已标记：${actionLabel}${reasonText}</font>`)]
   const ageMs = Date.now() - fb.createdAt.getTime()
   if (ageMs <= 10 * 60 * 1000) {
-    rows.push({
-      tag: 'action',
-      actions: [
-        actionButton('撤销', 'default', { jobId: entry.job.id, stage: 'undo', eventId: fb.eventId, cardJobs }),
-      ],
-    })
+    rows.push(
+      buttonRow([
+        callbackButton('撤销', 'default', { jobId: entry.job.id, stage: 'undo', eventId: fb.eventId, cardJobs }),
+      ]),
+    )
   }
   return rows
 }
 
-/** 单岗位区块：五行内容（设计稿 §2.2）
- *  注：column_set 的 border/background 均被 im/v1 校验拒绝（实测 200621），
- *  按设计稿兜底链最终退化为内容块 + 块间 hr 分隔 */
-function jobBlock(entry: CardJobEntry, cardJobs: string[]): Json[] {
+/** 单岗位区块：column_set 浅灰底高亮块（grey-50）+ 五行内容（设计稿 §2.2） */
+function jobBlock(entry: CardJobEntry, cardJobs: string[]): Json {
   const { job, score, feedback } = entry
   const rows: Json[] = [
-    { tag: 'div', text: md(`**${job.company} · ${job.title}**`) },
-    {
-      tag: 'div',
-      text: md(
-        `${salaryText(job)} · ${job.location || '地点未知'}　<font color='blue'>匹配 ${score.final} 分</font>`,
-      ),
-    },
+    md(`**${job.company} · ${job.title}**`),
+    md(`${salaryText(job)} · ${job.location || '地点未知'}　<font color='blue'>匹配 ${score.final} 分</font>`),
   ]
-  if (score.llmHighlight) rows.push({ tag: 'div', text: md(`看点：${score.llmHighlight}`) })
+  if (score.llmHighlight) rows.push(md(`看点：${score.llmHighlight}`))
   const digest = truncate(job.description || '', 100)
-  if (digest) rows.push({ tag: 'div', text: md(digest) })
+  if (digest) rows.push(md(digest))
 
   if (entry.askReason) rows.push(...actionRowState2(job.id, cardJobs))
   else if (feedback) rows.push(...actionRowState3(entry, cardJobs))
   else rows.push(actionRowState1(job.id, job.sourceUrl, cardJobs))
 
-  return rows
+  return {
+    tag: 'column_set',
+    flex_mode: 'none',
+    background_style: 'grey-50',
+    columns: [
+      { tag: 'column', width: 'weighted', weight: 1, padding: '8px', elements: rows },
+    ],
+  }
 }
 
 /** 整张推送卡片（schema 2.0，header wathet，底注见设计稿 §2.2） */
 export function buildPushCard(entries: CardJobEntry[], cardJobs: string[]): Json {
-  // hr 分隔每个岗位块（设计稿 §2.2 兜底：column_set 边框不可用时也有清晰分隔）
   const withHr: Json[] = []
   entries.forEach((e, i) => {
     if (i > 0) withHr.push({ tag: 'hr' })
-    withHr.push(...jobBlock(e, cardJobs))
+    withHr.push(jobBlock(e, cardJobs))
   })
   withHr.push({ tag: 'hr' })
   withHr.push({
