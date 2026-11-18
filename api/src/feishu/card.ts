@@ -95,16 +95,6 @@ function buttonRow(buttons: Json[], flow = false): Json {
   }
 }
 
-/** 态① 操作区：感兴趣（红）｜不合适（灰）｜已投递（蓝）｜查看 JD →（蓝链接） */
-function actionRowState1(jobId: string, sourceUrl: string, cardJobs: string[]): Json {
-  return buttonRow([
-    callbackButton('感兴趣', BUTTON_TYPE.interested, { jobId, action: 'interested', stage: 'submit', cardJobs }),
-    callbackButton('不合适', BUTTON_TYPE.pass, { jobId, action: 'pass', stage: 'ask_reason', cardJobs }),
-    callbackButton('已投递', BUTTON_TYPE.applied, { jobId, action: 'applied', stage: 'submit', cardJobs }),
-    linkButton('查看 JD →', BUTTON_TYPE.viewJd, sourceUrl),
-  ])
-}
-
 /** 态② 原因选择（点「不合适」后原地替换，设计稿 §2.3；六按钮 flow 换行） */
 function actionRowState2(jobId: string, cardJobs: string[]): Json[] {
   return [
@@ -137,20 +127,34 @@ function actionRowState3(entry: CardJobEntry, cardJobs: string[]): Json[] {
   return rows
 }
 
-/** 单岗位区块：column_set 浅灰底高亮块（grey-50）+ 五行内容（设计稿 §2.2） */
+/** 单岗位区块：column_set 浅灰底高亮块（grey-50）+ 内容行（设计稿 §2.2）
+ *  元素预算（v2 单卡上限 200 元素，实测 241 被拒 11310）：
+ *  文本合并为 2 行 markdown、4 按钮直接放列内（纵向堆叠），每岗 8 元素 → 15 岗 ≈ 136 */
 function jobBlock(entry: CardJobEntry, cardJobs: string[]): Json {
   const { job, score, feedback } = entry
-  const rows: Json[] = [
-    md(`**${job.company} · ${job.title}**`),
-    md(`${salaryText(job)} · ${job.location || '地点未知'}　<font color='blue'>匹配 ${score.final} 分</font>`),
-  ]
-  if (score.llmHighlight) rows.push(md(`看点：${score.llmHighlight}`))
+  const hl = score.llmHighlight ? `\n看点：${score.llmHighlight}` : ''
   const digest = truncate(job.description || '', 100)
-  if (digest) rows.push(md(digest))
+  const rows: Json[] = [
+    md(
+      `**${job.company} · ${job.title}**\n` +
+        `${salaryText(job)} · ${job.location || '地点未知'}　<font color='blue'>匹配 ${score.final} 分</font>`,
+    ),
+  ]
+  if (hl || digest) rows.push(md(`${hl ? hl.slice(1) + '\n' : ''}${digest}`))
 
-  if (entry.askReason) rows.push(...actionRowState2(job.id, cardJobs))
-  else if (feedback) rows.push(...actionRowState3(entry, cardJobs))
-  else rows.push(actionRowState1(job.id, job.sourceUrl, cardJobs))
+  if (entry.askReason) {
+    rows.push(...actionRowState2(job.id, cardJobs))
+  } else if (feedback) {
+    rows.push(...actionRowState3(entry, cardJobs))
+  } else {
+    // 态①：四按钮直接纵向堆叠（全宽，移动端好按；省元素额度）
+    rows.push(
+      callbackButton('感兴趣', BUTTON_TYPE.interested, { jobId: job.id, action: 'interested', stage: 'submit', cardJobs }),
+      callbackButton('不合适', BUTTON_TYPE.pass, { jobId: job.id, action: 'pass', stage: 'ask_reason', cardJobs }),
+      callbackButton('已投递', BUTTON_TYPE.applied, { jobId: job.id, action: 'applied', stage: 'submit', cardJobs }),
+      linkButton('查看 JD →', BUTTON_TYPE.viewJd, job.sourceUrl),
+    )
+  }
 
   return {
     tag: 'column_set',
