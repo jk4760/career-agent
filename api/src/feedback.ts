@@ -28,7 +28,7 @@ export interface AddFeedbackResult {
 export async function addFeedback(
   jobId: string,
   action: FeedbackAction,
-  reason?: string,
+  reason?: string | null,
   comment?: string,
 ): Promise<AddFeedbackResult> {
   if (

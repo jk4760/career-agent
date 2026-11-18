@@ -10,7 +10,7 @@ import { buildScore, feedbackAdjustments, type JobRow, type Prefs } from '../sco
 // M4：不合适必选六选一；感兴趣可选三选；applied 不带 reason
 const feedbackSchema = z.object({
   action: z.enum(['interested', 'pass', 'applied']),
-  reason: z.string().max(20).optional(),
+  reason: z.string().max(20).nullable().optional(), // 可空：未选预设原因时前端传 null
   comment: z.string().optional(),
 })
 
