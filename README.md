@@ -115,7 +115,7 @@ docker compose --profile manual run --rm collector
 
 ## 自动化（M4）
 
-**打分**：最终排序分 = LLM 主导分（`jobs.llm_eval` 缓存，Moonshot/Kimi，temperature 0，prompt 版本化于 `api/src/llm/scorePrompt.ts`）+ 反馈调整（不合适 −20 / 感兴趣 +10 职能词连坐，60 天衰减）；LLM 缺失自动降级为规则五维参考分 + 反馈调整。规则分同时产出事实标签（薪资达标/★目标公司/7 天内等）。
+**打分**：最终排序分 = LLM 主导分（`jobs.llm_eval` 缓存，Moonshot/Kimi kimi-k3.1-pro（reasoning_effort=low），prompt 版本化于 `api/src/llm/scorePrompt.ts`（v1.2 起不考虑新鲜度））+ 反馈调整（不合适 −20 / 感兴趣 +10 职能词连坐，60 天衰减）；LLM 缺失自动降级为规则四维参考分 + 反馈调整。规则分同时产出事实标签（薪资达标/★目标公司/7 天内等）。每日评分只补「近 7 天入库且未评分」岗位，单次硬上限 60 条；偏好七字段实际变化才触发近 60 天重评；prompt 版本升级迁移走人工显式触发。
 
 **每日编排**：唯一入口 `ops/daily.sh`（flock 防重入，日志 `ops/logs/ops-YYYYMMDD.log`，失败非零退出 + 同群 ⚠️ 告警）：
 
@@ -125,10 +125,30 @@ ops/daily.sh push-only          # 只推不采（晚 17:30）
 ops/daily.sh status             # 只读巡检：采集/评分/推送状态
 ```
 
-- 推送选择：新岗（未推过 + 最终分≥60 + 近 7 天入库）与无反馈满 5 天重推岗（生命周期最多 2 次）合并 Top 15，最终分降序；`push_log` 岗位级记录，仅推送成功才写（失败重试天然同批，at-least-once）；无候选静默不推
+- 推送选择：新岗（未推过 + 最终分≥60 + 近 7 天入库 + posted_at ≤45 天）与无反馈满 5 天重推岗（生命周期最多 2 次）合并 Top 15，最终分降序；`push_log` 岗位级记录，仅推送成功才写（失败重试天然同批，at-least-once）；无候选静默不推
 - **触发层**：Claw 云端定时（移交三步见 M4 文档 §3.5）；不稳时退回 crontab——条目在 `ops/crontab.example`，`crontab -e` 粘贴两行即切换（先停用 Claw 定时避免双触发）
 - **内网接口**：`/internal/score`、`/internal/push`、`/internal/alert` 不挂 `/api` 前缀，nginx 不转发；api 端口仅绑 `127.0.0.1:3001` 供 ops 脚本使用
 - 密钥（webhook、Moonshot key）只入服务器 `.env`，不进 git；评分/推送缺失配置时自动降级不失能
+
+## 飞书自建应用（M4.5 卡片内交互）
+
+推送卡片带三态操作区（态①四按钮：感兴趣红/不合适灰/已投递蓝/查看 JD 蓝；态②不合适六选一原因；态③已标记 + 10 分钟撤销），点选即落库并原地更新卡片——反馈与 Web 端共用同一服务函数（`api/src/feedback.ts`），规则完全一致；撤销为软取消（`feedback_events.canceled_at`），派生状态/连坐/重推判定统一过滤。
+
+**回调**：`POST http://49.235.68.206/feishu/callback`（nginx 免 Basic Auth；安全靠应用层 Verification Token 校验，伪造请求 403）。事件订阅选「将事件发送至开发者服务器」，添加事件「卡片回传交互」（card.action.trigger）。
+
+**环境变量**（只入服务器 `.env`，权限 600，不进 git）：
+
+| 变量 | 说明 | 缺省行为 |
+|---|---|---|
+| `FEISHU_APP_ID` | 自建应用 App ID | 未配齐 → 发送回退 webhook、回调 503 |
+| `FEISHU_APP_SECRET` | 自建应用 App Secret | 同上 |
+| `FEISHU_VERIFICATION_TOKEN` | 事件订阅 Verification Token | 同上 |
+| `FEISHU_ENCRYPT_KEY` | 可选；配了则回调强制 AES 解密 | 不配则按明文校验 token |
+| `FEISHU_CHAT_ID` | 目标群 chat_id（机器人入群后经 `im/v1/chats` 获取） | app 通道不启用 |
+| `FEISHU_SEND_CHANNEL` | `app` / `webhook`，默认 `webhook` | 推送通道开关 |
+| `FEISHU_ALERT_CHANNEL` | 告警通道开关，默认 `webhook`（灰度期不切） | ⚠️ 告警仍走 webhook |
+
+**应用侧所需权限**：`im:message`（发消息）、`im:chat:readonly`（读群列表）。
 
 ## 里程碑
 
