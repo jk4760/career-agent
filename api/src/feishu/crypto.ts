@@ -3,14 +3,19 @@ import { createDecipheriv, createHash } from 'node:crypto'
 
 /**
  * 飞书事件订阅加密：body = {"encrypt": "<base64>"}。
- * AES key = SHA256(Encrypt Key)（32 字节），iv = key 前 16 字节。
+ * 官方算法（以 OpenFeishu 测试向量验证）：key = SHA256(Encrypt Key)；
+ * base64 解码后【前 16 字节为 IV】、其余为密文主体；AES-256-CBC + PKCS7。
+ * 自测：decrypt("test key", "P37w+VZImNgPEO1RBhJ6RtKl7n6zymIbEG1pReEzghk=") = "hello world"
  */
 export function decryptEvent(encryptKey: string, encryptB64: string): Record<string, unknown> | null {
   try {
-    const key = createHash('sha256').update(encryptKey).digest()
-    const iv = key.subarray(0, 16)
+    const key = createHash('sha256').update(encryptKey, 'utf8').digest()
+    const blob = Buffer.from(encryptB64, 'base64')
+    if (blob.length < 32) return null // 至少 IV(16) + 一个 AES 块
+    const iv = blob.subarray(0, 16)
+    const ct = blob.subarray(16)
     const decipher = createDecipheriv('aes-256-cbc', key, iv)
-    const plain = Buffer.concat([decipher.update(encryptB64, 'base64'), decipher.final()])
+    const plain = Buffer.concat([decipher.update(ct), decipher.final()])
     return JSON.parse(plain.toString('utf8')) as Record<string, unknown>
   } catch {
     return null
