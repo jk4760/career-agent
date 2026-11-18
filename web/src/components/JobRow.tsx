@@ -3,37 +3,11 @@ import { ChevronDown, ExternalLink } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { FeedbackDialog, feedbackActionLabels } from '@/components/FeedbackDialog'
 import { StatusBadge } from '@/components/StatusBadge'
-import { cn } from '@/lib/utils'
 import type { FeedbackAction, JobWithStatus } from '@/types'
 
 function formatSalary(job: JobWithStatus): string {
   if (job.salaryMin == null || job.salaryMax == null) return '薪资面议'
   return `${Math.round(job.salaryMin / 1000)}k–${Math.round(job.salaryMax / 1000)}k`
-}
-
-/** 元信息 pill：默认白底 1px 边框，accent 用 blue-50 底（§10.6.1） */
-function MetaPill({
-  children,
-  accent,
-  className,
-}: {
-  children: React.ReactNode
-  accent?: boolean
-  className?: string
-}) {
-  return (
-    <span
-      className={cn(
-        'rounded-lg px-1.5 py-0.5 text-[11px] whitespace-nowrap',
-        accent
-          ? 'bg-accent text-accent-foreground'
-          : 'border bg-white text-muted-foreground',
-        className,
-      )}
-    >
-      {children}
-    </span>
-  )
 }
 
 interface JobRowProps {
@@ -56,27 +30,27 @@ export function JobRow({ job, onFeedback, defaultExpanded = false, initialAction
 
   return (
     <div className="group/row">
-      {/* 允许换行：AI 面板加宽后行宽变窄时，右侧 pill/按钮组整体下折，
-          而不是把标题压没（修复 2 的配套响应式调整） */}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
+      {/* 信息层级（2026-11 用户反馈修订）：
+          第一梯队 = 岗位标题（给足宽度，允许两行不截断）；
+          第二梯队 = LLM 理由标签 + 规则事实标签（独占一行，完整展示）；
+          第三梯队 = 匹配分/地点/薪资/来源/日期（降为一行灰字，不再用 pill 抢宽） */}
+      <div className="flex items-start gap-3 px-4 py-3">
         {/* 左 + 中：首字符方块、标题与公司（点击展开） */}
         <button
           type="button"
-          className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-md text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+          className="flex min-w-0 flex-1 cursor-pointer items-start gap-3 rounded-md text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
           onClick={() => setExpanded((v) => !v)}
           aria-expanded={expanded}
         >
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-[15px] font-semibold text-slate-600">
+          <span className="mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-[15px] font-semibold text-slate-600">
             {job.company.slice(0, 1)}
           </span>
-          <span className="min-w-0">
-            <span className="block truncate text-[15px] font-semibold">{job.title}</span>
-            <span className="mt-0.5 block truncate text-[13px] text-muted-foreground">
-              {job.company}
-            </span>
-            {/* M4：LLM 理由标签 + 规则事实标签 */}
+          <span className="min-w-0 flex-1">
+            <span className="block text-[15px] font-semibold leading-snug">{job.title}</span>
+            <span className="mt-0.5 block text-[13px] text-muted-foreground">{job.company}</span>
+            {/* 第二梯队：LLM 理由标签 + 规则事实标签（完整展示，不挤压） */}
             {(job.score.llmReasons.length > 0 || job.score.ruleFacts.length > 0) && (
-              <span className="mt-1 flex flex-wrap gap-1">
+              <span className="mt-1.5 flex flex-wrap gap-1">
                 {job.score.llmReasons.map((t) => (
                   <span
                     key={`llm-${t}`}
@@ -95,22 +69,14 @@ export function JobRow({ job, onFeedback, defaultExpanded = false, initialAction
                 ))}
               </span>
             )}
+            {/* 第三梯队：次级元信息（一行灰字） */}
+            <span className="mt-1.5 block text-xs tabular-nums text-muted-foreground/80">
+              匹配 {job.score.final}
+              {job.location ? ` · ${job.location}` : ''} · {formatSalary(job)} · {job.source} ·{' '}
+              {job.collectedAt.slice(0, 10)}
+            </span>
           </span>
         </button>
-
-        {/* 右：元信息 pill（桌面端展示，hover 左移让出操作区） */}
-        <div className="hidden shrink-0 items-center gap-1.5 transition-transform duration-300 group-hover/row:-translate-x-2 lg:flex">
-          {/* M4：最终排序分（降级时附说明） */}
-          <MetaPill accent className="tabular-nums" aria-label="最终排序分">
-            匹配 {job.score.final}
-          </MetaPill>
-          {job.location && <MetaPill>{job.location}</MetaPill>}
-          <MetaPill className="tabular-nums">{formatSalary(job)}</MetaPill>
-          <MetaPill accent>{job.source}</MetaPill>
-          <span className="text-[11px] whitespace-nowrap text-foreground/50 tabular-nums">
-            {job.collectedAt.slice(0, 10)}
-          </span>
-        </div>
 
         <div className="flex shrink-0 items-center gap-1.5">
           <StatusBadge status={job.status} />
