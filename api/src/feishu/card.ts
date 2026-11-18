@@ -58,14 +58,15 @@ function truncate(text: string, n: number): string {
   return t.length > n ? `${t.slice(0, n)}…` : t
 }
 
-/** 回调按钮（点按回传 value 到 /feishu/callback） */
+/** 回调按钮（点按回传 value 到 /feishu/callback）
+ *  官方结构（lark-cli 组件文档）：value 必须放在 behavior 对象内——
+ *  behaviors:[{type:'callback', value:{...}}]；顶层 value 是 1.0 旧写法，2.0 下按钮会失效 */
 function callbackButton(content: string, type: string, value: Record<string, unknown>): Json {
   return {
     tag: 'button',
     text: plain(content),
     type,
-    value,
-    behaviors: [{ type: 'callback' }],
+    behaviors: [{ type: 'callback', value }],
   }
 }
 
@@ -75,7 +76,7 @@ function linkButton(content: string, type: string, url: string): Json {
     tag: 'button',
     text: plain(content),
     type,
-    behaviors: [{ type: 'open_url', default_url: url }],
+    behaviors: [{ type: 'open_url', default_url: url, pc_url: '', ios_url: '', android_url: '' }],
   }
 }
 
