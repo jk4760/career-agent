@@ -139,7 +139,9 @@ function jobBlock(entry: CardJobEntry, cardJobs: string[]): Json {
 
   return {
     tag: 'column_set',
-    border: { color: 'grey', corner_radius: 'm' },
+    // 兜底（设计稿 §2.2）：border 属性被 im/v1 校验拒绝（实测 200621 unknown property），
+    // 改浅灰底块 + 块间 hr 分隔
+    background: 'grey',
     columns: [{ tag: 'column', width: 'weighted', weight: 1, elements: rows }],
   }
 }
