@@ -117,8 +117,10 @@ function actionRowState3(entry: CardJobEntry, cardJobs: string[]): Json[] {
   return rows
 }
 
-/** 单岗位区块：column_set 外边框 + 五行内容（设计稿 §2.2） */
-function jobBlock(entry: CardJobEntry, cardJobs: string[]): Json {
+/** 单岗位区块：五行内容（设计稿 §2.2）
+ *  注：column_set 的 border/background 均被 im/v1 校验拒绝（实测 200621），
+ *  按设计稿兜底链最终退化为内容块 + 块间 hr 分隔 */
+function jobBlock(entry: CardJobEntry, cardJobs: string[]): Json[] {
   const { job, score, feedback } = entry
   const rows: Json[] = [
     { tag: 'div', text: md(`**${job.company} · ${job.title}**`) },
@@ -137,23 +139,16 @@ function jobBlock(entry: CardJobEntry, cardJobs: string[]): Json {
   else if (feedback) rows.push(...actionRowState3(entry, cardJobs))
   else rows.push(actionRowState1(job.id, job.sourceUrl, cardJobs))
 
-  return {
-    tag: 'column_set',
-    // 兜底（设计稿 §2.2）：border 属性被 im/v1 校验拒绝（实测 200621 unknown property），
-    // 改浅灰底块 + 块间 hr 分隔
-    background: 'grey',
-    columns: [{ tag: 'column', width: 'weighted', weight: 1, elements: rows }],
-  }
+  return rows
 }
 
 /** 整张推送卡片（schema 2.0，header wathet，底注见设计稿 §2.2） */
 export function buildPushCard(entries: CardJobEntry[], cardJobs: string[]): Json {
-  const elements: Json[] = entries.map((e) => jobBlock(e, cardJobs))
-  // hr 兜底：column_set border 不渲染的老客户端也有分隔（设计稿 §2.2 兜底）
+  // hr 分隔每个岗位块（设计稿 §2.2 兜底：column_set 边框不可用时也有清晰分隔）
   const withHr: Json[] = []
-  elements.forEach((el, i) => {
+  entries.forEach((e, i) => {
     if (i > 0) withHr.push({ tag: 'hr' })
-    withHr.push(el)
+    withHr.push(...jobBlock(e, cardJobs))
   })
   withHr.push({ tag: 'hr' })
   withHr.push({
