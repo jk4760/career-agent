@@ -80,7 +80,7 @@ function linkButton(content: string, type: string, url: string): Json {
   }
 }
 
-/** 按钮行：column_set 每列一个按钮（源码对「全列皆按钮」按按钮行排版） */
+/** 按钮行：column_set 每列一个按钮（width:auto 横向排列，桌面/移动端一致） */
 function buttonRow(buttons: Json[], flow = false): Json {
   return {
     tag: 'column_set',
@@ -93,6 +93,16 @@ function buttonRow(buttons: Json[], flow = false): Json {
       elements: [b],
     })),
   }
+}
+
+/** 态① 操作区（设计稿 §2.3 恢复横排）：感兴趣（红）｜不合适（灰）｜已投递（蓝）｜查看 JD →（蓝链接） */
+function actionRowState1(jobId: string, sourceUrl: string, cardJobs: string[]): Json {
+  return buttonRow([
+    callbackButton('感兴趣', BUTTON_TYPE.interested, { jobId, action: 'interested', stage: 'submit', cardJobs }),
+    callbackButton('不合适', BUTTON_TYPE.pass, { jobId, action: 'pass', stage: 'ask_reason', cardJobs }),
+    callbackButton('已投递', BUTTON_TYPE.applied, { jobId, action: 'applied', stage: 'submit', cardJobs }),
+    linkButton('查看 JD →', BUTTON_TYPE.viewJd, sourceUrl),
+  ])
 }
 
 /** 态② 原因选择（点「不合适」后原地替换，设计稿 §2.3；六按钮 flow 换行） */
@@ -128,8 +138,7 @@ function actionRowState3(entry: CardJobEntry, cardJobs: string[]): Json[] {
 }
 
 /** 单岗位区块：column_set 浅灰底高亮块（grey-50）+ 内容行（设计稿 §2.2）
- *  元素预算（v2 单卡上限 200 元素，实测 241 被拒 11310）：
- *  文本合并为 2 行 markdown、4 按钮直接放列内（纵向堆叠），每岗 8 元素 → 15 岗 ≈ 136 */
+ *  元素预算：文本合并为 2 行 markdown + 横排按钮行（column_set+4列+4按钮=9），每岗 13 元素 */
 function jobBlock(entry: CardJobEntry, cardJobs: string[]): Json {
   const { job, score, feedback } = entry
   const hl = score.llmHighlight ? `\n看点：${score.llmHighlight}` : ''
@@ -147,13 +156,7 @@ function jobBlock(entry: CardJobEntry, cardJobs: string[]): Json {
   } else if (feedback) {
     rows.push(...actionRowState3(entry, cardJobs))
   } else {
-    // 态①：四按钮直接纵向堆叠（全宽，移动端好按；省元素额度）
-    rows.push(
-      callbackButton('感兴趣', BUTTON_TYPE.interested, { jobId: job.id, action: 'interested', stage: 'submit', cardJobs }),
-      callbackButton('不合适', BUTTON_TYPE.pass, { jobId: job.id, action: 'pass', stage: 'ask_reason', cardJobs }),
-      callbackButton('已投递', BUTTON_TYPE.applied, { jobId: job.id, action: 'applied', stage: 'submit', cardJobs }),
-      linkButton('查看 JD →', BUTTON_TYPE.viewJd, job.sourceUrl),
-    )
+    rows.push(actionRowState1(job.id, job.sourceUrl, cardJobs))
   }
 
   return {
@@ -166,8 +169,13 @@ function jobBlock(entry: CardJobEntry, cardJobs: string[]): Json {
   }
 }
 
-/** 整张推送卡片（schema 2.0，header wathet，底注见设计稿 §2.2） */
-export function buildPushCard(entries: CardJobEntry[], cardJobs: string[]): Json {
+/** 整张推送卡片（schema 2.0，header wathet，底注见设计稿 §2.2）
+ *  注：回调重建路径专用——按钮里的 cardJobs 只含本片岗位 id，单片永远不超上限 */
+export function buildPushCard(
+  entries: CardJobEntry[],
+  cardJobs: string[],
+  opts?: { title?: string },
+): Json {
   const withHr: Json[] = []
   entries.forEach((e, i) => {
     if (i > 0) withHr.push({ tag: 'hr' })
@@ -180,10 +188,62 @@ export function buildPushCard(entries: CardJobEntry[], cardJobs: string[]): Json
     config: { wide_screen_mode: true, update_multi: true },
     header: {
       template: 'wathet',
-      title: plain(`NextCareer 今日新岗位 ${entries.length} 条`),
+      title: plain(opts?.title ?? `NextCareer 今日新岗位 ${entries.length} 条`),
     },
     body: { elements: withHr },
   }
+}
+
+/** 递归统计卡片元素总数（columns/elements 等嵌套数组全部计入） */
+export function countElements(node: unknown): number {
+  if (Array.isArray(node)) return node.reduce((s, x) => s + countElements(x), 0)
+  if (node && typeof node === 'object') {
+    let n = 1
+    for (const v of Object.values(node)) {
+      if (Array.isArray(v) || (v && typeof v === 'object')) n += countElements(v)
+    }
+    return n
+  }
+  return 0
+}
+
+export const CARD_ELEMENT_BUDGET = 195 // 官方上限 200，留 5 余量
+
+export interface CardShard {
+  card: Json
+  jobIds: string[]
+  elements: number
+}
+
+/** 动态拆分（修复 230099/11310）：按实际组件数 ≤195 贪心装箱分片，
+ *  不丢岗不重岗；按钮里的 cardJobs 只带本片岗位 id（回调重建天然安全） */
+export function buildCardShards(entries: CardJobEntry[]): CardShard[] {
+  // 单岗元素成本（结构恒定，与 cardJobs 内容无关）：column_set+column+2md+按钮行(9) = 13，+1 块前 hr
+  const costs = entries.map((e) => countElements(jobBlock(e, [e.job.id])) + 1)
+  const groups: number[][] = []
+  let cur: number[] = []
+  let curCost = 3 // hr + 底注 + footer hr
+  entries.forEach((_, i) => {
+    if (cur.length && curCost + costs[i] > CARD_ELEMENT_BUDGET) {
+      groups.push(cur)
+      cur = []
+      curCost = 3
+    }
+    cur.push(i)
+    curCost += costs[i]
+  })
+  if (cur.length) groups.push(cur)
+
+  const total = entries.length
+  const k = groups.length
+  return groups.map((idxs, i) => {
+    const shardEntries = idxs.map((x) => entries[x])
+    const shardIds = shardEntries.map((e) => e.job.id)
+    const card = buildPushCard(shardEntries, shardIds, {
+      title: k > 1 ? `NextCareer 今日新岗位 ${total} 条（${i + 1}/${k}）` : undefined,
+    })
+    return { card, jobIds: shardIds, elements: countElements(card) }
+  })
 }
 
 /** 回调重建卡片用：按 jobId 列表装配（分数实时重算 + 每岗最新有效反馈） */

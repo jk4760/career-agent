@@ -8,7 +8,7 @@ import { createHmac } from 'node:crypto'
 import { desc, isNull } from 'drizzle-orm'
 import { feedbackEvents, jobs, pushLog } from '../../db/schema'
 import { db } from './db'
-import { assembleEntries, buildPushCard, type CardJobEntry } from './feishu/card'
+import { assembleEntries, buildCardShards, buildPushCard, type CardJobEntry } from './feishu/card'
 import { sendAppCard, sendAppText } from './feishu/sender'
 import { feishuAppConfigured } from './feishu/token'
 import { buildScore, feedbackAdjustments, type JobRow, type Prefs, type ScoreBreakdown } from './scoring'
@@ -171,9 +171,34 @@ export async function pushJobs(prefs: Prefs): Promise<{
 
   let result: { ok: boolean; detail: string }
   if (useAppChannel) {
-    const cardJobs = candidates.map(({ job }) => job.id)
-    const entries = (await assembleEntries(cardJobs, prefs)) as CardJobEntry[]
-    result = await sendAppCard(process.env.FEISHU_CHAT_ID!, buildPushCard(entries, cardJobs))
+    // M4.5 分片发送（修复 230099/11310）：每片独立发送、成功后立即记本片 push_log；
+    // 任意分片失败 → 告警 + 任务非零（已记片的岗位重试时自动排除，不重复）
+    const entries = (await assembleEntries(
+      candidates.map(({ job }) => job.id),
+      prefs,
+    )) as CardJobEntry[]
+    const shards = buildCardShards(entries)
+    console.log(`[push] 通道=app 分片=${shards.length}（元素数 ${shards.map((s) => s.elements).join('/')}，岗位数 ${shards.map((s) => s.jobIds.length).join('/')}）`)
+    let loggedCount = 0
+    result = { ok: true, detail: 'ok' }
+    for (let i = 0; i < shards.length; i++) {
+      const shard = shards[i]
+      const send = await sendAppCard(process.env.FEISHU_CHAT_ID!, shard.card)
+      if (!send.ok) {
+        console.error(`[push] 分片 ${i + 1}/${shards.length} 发送失败：${send.detail}`)
+        result = { ok: false, detail: `分片 ${i + 1}/${shards.length} 发送失败：${send.detail}` }
+        break
+      }
+      // 本片成功才记 push_log（失败片与后续片的岗位留待重试，不重复）
+      await db.insert(pushLog).values(shard.jobIds.map((jobId) => ({ jobId, channel: 'feishu' })))
+      loggedCount += shard.jobIds.length
+      console.log(`[push] 分片 ${i + 1}/${shards.length} 发送成功（${shard.jobIds.length} 岗已记 push_log）`)
+    }
+    if (!result.ok) {
+      await sendAlert(`飞书推送失败（${result.detail}）`)
+      return { pushed: loggedCount, silent: false, ok: false, detail: result.detail }
+    }
+    return { pushed: candidates.length, silent: false, ok: true, detail: 'ok' }
   } else {
     const lines = candidates.map(({ job, score }) => {
       const scoreText = `【匹配 ${score.final} 分】`
