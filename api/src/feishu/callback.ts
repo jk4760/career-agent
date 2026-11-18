@@ -37,32 +37,45 @@ export const feishuRoute = new Hono().post('/callback', async (c) => {
     return c.json({ error: 'feishu app not configured (FEISHU_APP_ID/SECRET/VERIFICATION_TOKEN)' }, 503)
   }
 
-  let body = (await c.req.json().catch(() => null)) as Json | null
-  if (!body) return c.json({ error: 'invalid json' }, 400)
+  const raw = (await c.req.json().catch(() => null)) as Json | null
+  if (!raw) return c.json({ error: 'invalid json' }, 400)
 
-  // 解密（配了 Encrypt Key 则强制要求加密体）
-  const encryptKey = process.env.FEISHU_ENCRYPT_KEY
-  if (encryptKey) {
-    const enc = body.encrypt
-    if (typeof enc !== 'string') return c.json({ error: 'expected encrypted body' }, 400)
-    body = decryptEvent(encryptKey, enc)
-    if (!body) return c.json({ error: 'decrypt failed' }, 400)
+  // 解密或明文：只含 encrypt 字段的加密体必须解密；明文体直接处理
+  // （url_verification 两条路径都要通——飞书保存回调地址时的探测可能是明文）
+  let body: Json | null = raw
+  if (typeof raw.encrypt === 'string') {
+    const encryptKey = process.env.FEISHU_ENCRYPT_KEY
+    if (!encryptKey) {
+      log('status=400 reason=收到加密体但未配置 FEISHU_ENCRYPT_KEY')
+      return c.json({ error: 'encrypted body but FEISHU_ENCRYPT_KEY not set' }, 400)
+    }
+    body = decryptEvent(encryptKey, raw.encrypt)
+    if (!body) {
+      log('status=400 reason=解密失败')
+      return c.json({ error: 'decrypt failed' }, 400)
+    }
+  }
+
+  const eventType = extractEventType(body)
+  // url_verification：配置回调 URL 时的验证——优先处理并回显 challenge，
+  // 保证这条链路永远快速可达（不碰数据库/外部 API）
+  if (body.type === 'url_verification' || eventType === 'url_verification') {
+    if (extractToken(body) !== process.env.FEISHU_VERIFICATION_TOKEN) {
+      log('type=url_verification status=403 reason=token 不匹配')
+      return c.json({ error: 'forbidden' }, 403)
+    }
+    log('type=url_verification status=200 reason=ok')
+    return c.json({ challenge: body.challenge })
   }
 
   // Verification Token 校验（公网暴露面的唯一防线，不匹配一律 403）
   if (extractToken(body) !== process.env.FEISHU_VERIFICATION_TOKEN) {
-    log('token 校验失败（403）')
+    log('type=%s status=403 reason=token 不匹配', eventType ?? 'unknown')
     return c.json({ error: 'forbidden' }, 403)
   }
 
-  // url_verification：配置回调 URL 时的验证
-  const eventType = extractEventType(body)
-  if (body.type === 'url_verification' || eventType === 'url_verification') {
-    log('url_verification 通过')
-    return c.json({ challenge: body.challenge })
-  }
-
   if (eventType !== 'card.action.trigger') {
+    log('type=%s status=200 reason=忽略', eventType ?? 'unknown')
     return c.json({ ok: true }) // 其他事件忽略
   }
 
