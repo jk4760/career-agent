@@ -5,6 +5,7 @@ import { migrate } from 'drizzle-orm/postgres-js/migrator'
 import { Hono } from 'hono'
 import { db } from './db'
 import { attachmentsRoute } from './routes/attachments'
+import { feishuRoute } from './feishu/callback'
 import { internalRoute } from './routes/internal'
 import { jobsRoute } from './routes/jobs'
 import { facetsRoute, materialsRoute } from './routes/materials'
@@ -29,6 +30,9 @@ app.route('/api/preferences', preferencesRoute)
 
 // M4 内网接口：不挂 /api 前缀，nginx 不转发，仅 compose 内网（collector / ops 脚本）可达
 app.route('/internal', internalRoute)
+
+// M4.5 飞书回调：nginx /feishu/ 免 Basic Auth 转发到此（安全靠 Verification Token 校验）
+app.route('/feishu', feishuRoute)
 
 // 启动时对空库/老库执行迁移（api/drizzle 为入库的生成产物）
 const migrationsFolder = fileURLToPath(new URL('../drizzle', import.meta.url))

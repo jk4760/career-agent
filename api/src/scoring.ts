@@ -178,6 +178,7 @@ interface FeedbackEventRow {
   jobId: string
   action: string
   createdAt: Date
+  canceledAt?: Date | null
 }
 
 /** 反馈调整层（§3.1）：不合适 −20 / 感兴趣 +10，职能词连坐，60 天硬衰减，事件本岗除外 */
@@ -190,8 +191,10 @@ export function feedbackAdjustments(
   const keywords = [...prefs.roles, ...prefs.keywordsInclude].filter(Boolean)
   const result = new Map<string, ScoreBreakdown['feedback']>()
   const cutoff = 60
+  // M4.5：撤销的反馈不参与调整（防御性过滤，调用方通常已过滤）
+  const active = events.filter((e) => !e.canceledAt)
   // 每个反馈事件：算出该岗位 title 命中的职能词
-  const adjustments = events.flatMap((e) => {
+  const adjustments = active.flatMap((e) => {
     const age = daysSince(e.createdAt.toISOString(), now)
     if (age === null || age > cutoff) return []
     const src = jobs.find((j) => j.id === e.jobId)

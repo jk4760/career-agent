@@ -1,15 +1,13 @@
 import { createHash } from 'node:crypto'
-import { desc, eq, inArray, sql } from 'drizzle-orm'
+import { desc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { feedbackEvents, jobs, preferences } from '../../../db/schema'
 import { db } from '../db'
+import { addFeedback } from '../feedback'
 import { buildScore, feedbackAdjustments, type JobRow, type Prefs } from '../scoring'
 
 // M4：不合适必选六选一；感兴趣可选三选；applied 不带 reason
-const PASS_REASONS = ['职能', '薪资', '地点', '职级', '公司', '其他'] as const
-const INTERESTED_REASONS = ['职能对口', '薪资满意', '公司想去'] as const
-
 const feedbackSchema = z.object({
   action: z.enum(['interested', 'pass', 'applied']),
   reason: z.string().max(20).optional(),
@@ -42,9 +40,11 @@ export const jobsRoute = new Hono()
     const status = c.req.query('status')
     const sort = c.req.query('sort') ?? 'score'
     const allJobs = await db.select().from(jobs).orderBy(desc(jobs.collectedAt))
+    // M4.5：派生状态只认有效反馈（撤销的记录 excluded，DB 保留审计）
     const events = await db
       .select()
       .from(feedbackEvents)
+      .where(isNull(feedbackEvents.canceledAt))
       .orderBy(desc(feedbackEvents.createdAt))
     const [prefRow] = await db.select().from(preferences).limit(1)
     const prefs: Prefs = {
@@ -99,6 +99,7 @@ export const jobsRoute = new Hono()
       .from(feedbackEvents)
       .where(eq(feedbackEvents.jobId, id))
       .orderBy(desc(feedbackEvents.createdAt))
+    const activeEvents = events.filter((e) => !e.canceledAt) // 派生状态只认有效反馈
     const [prefRow] = await db.select().from(preferences).limit(1)
     const prefs: Prefs = {
       roles: prefRow?.roles ?? [],
@@ -110,13 +111,16 @@ export const jobsRoute = new Hono()
       backgroundText: prefRow?.backgroundText ?? null,
     }
     const now = new Date()
-    const allEvents = await db.select().from(feedbackEvents)
+    const allEvents = await db
+      .select()
+      .from(feedbackEvents)
+      .where(isNull(feedbackEvents.canceledAt))
     const allJobs = (await db.select().from(jobs)) as JobRow[] // 连坐需要全表（事件源岗位关键词）
     const adjustments = feedbackAdjustments(allJobs, allEvents, prefs, now)
     return c.json({
       ...job,
-      status: events[0]?.action ?? 'new',
-      feedbackEvents: events,
+      status: activeEvents[0]?.action ?? 'new',
+      feedbackEvents: events, // 展示层给全量（含已撤销，前端可区分）；状态与调整用 activeEvents
       score: buildScore(job as JobRow, prefs, adjustments.get(job.id), now),
     })
   })
@@ -169,32 +173,13 @@ export const jobsRoute = new Hono()
     return c.json({ inserted, updated, skipped: values.length - rows.length }, 201)
   })
 
-  // addFeedback(jobId, action, reason?, comment?)：追加式，不改写历史
+  // addFeedback(jobId, action, reason?, comment?)：追加式，不改写历史（M4.5 起与飞书卡片回调共用 feedback.addFeedback）
   .post('/:id/feedback', async (c) => {
     const id = c.req.param('id')
     const parsed = feedbackSchema.safeParse(await c.req.json())
     if (!parsed.success) return c.json({ error: parsed.error.issues }, 400)
     const { action, reason, comment } = parsed.data
-    if (action === 'pass' && !(reason && PASS_REASONS.includes(reason as (typeof PASS_REASONS)[number]))) {
-      return c.json({ error: '不合适必须选择原因（职能/薪资/地点/职级/公司/其他）' }, 400)
-    }
-    if (
-      action === 'interested' &&
-      reason &&
-      !INTERESTED_REASONS.includes(reason as (typeof INTERESTED_REASONS)[number])
-    ) {
-      return c.json({ error: '感兴趣原因必须是：职能对口/薪资满意/公司想去' }, 400)
-    }
-    const [job] = await db.select({ id: jobs.id }).from(jobs).where(eq(jobs.id, id))
-    if (!job) return c.json({ error: 'job not found' }, 404)
-    const [event] = await db
-      .insert(feedbackEvents)
-      .values({
-        jobId: id,
-        action,
-        reason: action === 'applied' ? null : (reason ?? null),
-        comment: comment?.trim() ? comment.trim() : null,
-      })
-      .returning()
-    return c.json(event, 201)
+    const result = await addFeedback(id, action, reason, comment)
+    if (!result.ok) return c.json({ error: result.error }, result.error === 'job not found' ? 404 : 400)
+    return c.json(result.event, 201)
   })

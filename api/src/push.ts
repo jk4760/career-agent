@@ -2,10 +2,15 @@
 // 选择逻辑：新岗（未推过且最终分≥60，近 7 天入库）+ 重推岗（首推满 5 天无任何反馈，
 // 生命周期最多 2 次）合并 Top 15，最终分降序、同分 posted_at 新→旧；静默不推；
 // push_log 岗位级记录，仅推送成功后写入（失败重试天然同批，at-least-once）
+// M4.5 施工项 4：双通道——FEISHU_SEND_CHANNEL=webhook（现状）/ app（自建应用三态卡片）；
+// 未配齐 app 变量时回退 webhook，不允许静默半配置状态；告警通道独立开关（灰度期仍 webhook）
 import { createHmac } from 'node:crypto'
-import { desc } from 'drizzle-orm'
+import { desc, isNull } from 'drizzle-orm'
 import { feedbackEvents, jobs, pushLog } from '../../db/schema'
 import { db } from './db'
+import { assembleEntries, buildPushCard, type CardJobEntry } from './feishu/card'
+import { sendAppCard, sendAppText } from './feishu/sender'
+import { feishuAppConfigured } from './feishu/token'
 import { buildScore, feedbackAdjustments, type JobRow, type Prefs, type ScoreBreakdown } from './scoring'
 
 const PUSH_THRESHOLD = 60 // §3.6-18：LLM 分分布第一周观察后校准
@@ -50,8 +55,16 @@ async function feishuSend(payload: unknown): Promise<{ ok: boolean; detail: stri
   }
 }
 
-/** ⚠️ 告警：推送/采集/评分任一步失败时同群发一条（供 ops 脚本与推送模块共用） */
+/** ⚠️ 告警：推送/采集/评分任一步失败时同群发一条（供 ops 脚本与推送模块共用）
+ *  M4.5：告警通道独立开关 FEISHU_ALERT_CHANNEL（默认 webhook，灰度期不切 app） */
 export async function sendAlert(summary: string): Promise<{ ok: boolean; detail: string }> {
+  if (
+    (process.env.FEISHU_ALERT_CHANNEL || 'webhook') === 'app' &&
+    feishuAppConfigured() &&
+    process.env.FEISHU_CHAT_ID
+  ) {
+    return sendAppText(process.env.FEISHU_CHAT_ID, `⚠️ NextCareer 今日采集/推送失败：${summary}`)
+  }
   return feishuSend({
     msg_type: 'text',
     content: { text: `⚠️ NextCareer 今日采集/推送失败：${summary}` },
@@ -79,7 +92,12 @@ interface Candidate {
 
 export async function selectCandidates(prefs: Prefs, now: Date): Promise<Candidate[]> {
   const allJobs = (await db.select().from(jobs).orderBy(desc(jobs.collectedAt))) as JobRow[]
-  const events = await db.select().from(feedbackEvents).orderBy(desc(feedbackEvents.createdAt))
+  // M4.5：重推「零反馈」与 pass 排除判定只认有效反馈（撤销的记录 excluded）
+  const events = await db
+    .select()
+    .from(feedbackEvents)
+    .where(isNull(feedbackEvents.canceledAt))
+    .orderBy(desc(feedbackEvents.createdAt))
   const pushRows = await db.select().from(pushLog)
 
   const adjustments = feedbackAdjustments(allJobs, events, prefs, now)
@@ -145,41 +163,53 @@ export async function pushJobs(prefs: Prefs): Promise<{
     return { pushed: 0, silent: true, ok: true, detail: '两类候选均为空，静默不推' }
   }
 
-  const lines = candidates.map(({ job, score }) => {
-    const scoreText = `【匹配 ${score.final} 分】`
-    const highlight = score.llmHighlight ? `\n看点：${score.llmHighlight}` : ''
-    const digest = jdDigest(job)
-    const act = (action: string, label: string) =>
-      `[${label}](${WEB_BASE}/jobs?focus=${job.id}&action=${action})`
-    return (
-      `**${job.company}** · ${job.title} · ${salaryText(job)} · ${job.location || '地点未知'} ${scoreText}${highlight}\n` +
-      `JD 摘要：${digest || '（无 JD 正文）'}\n` +
-      `${act('interested', '感兴趣')} ${act('pass', '不合适')} ${act('applied', '已投递')} ｜ [查看 JD](${job.sourceUrl})`
-    )
-  })
-  const card = {
-    msg_type: 'interactive',
-    card: {
-      config: { wide_screen_mode: true },
-      header: {
-        template: 'blue',
-        title: { tag: 'plain_text', content: `NextCareer 今日新岗位 ${candidates.length} 条` },
-      },
-      elements: [
-        ...candidates.map((_, i) => ({
-          tag: 'div',
-          text: { tag: 'lark_md', content: lines[i] },
-        })),
-        { tag: 'hr' },
-        {
-          tag: 'note',
-          elements: [{ tag: 'plain_text', content: '完整列表见 Web（岗位流按匹配分排序）' }],
-        },
-      ],
-    },
-  }
+  // M4.5 双通道：app 通道（三态卡片）配齐则优先；未配齐回退 webhook（施工项 0 降级）
+  const useAppChannel =
+    (process.env.FEISHU_SEND_CHANNEL || 'webhook') === 'app' &&
+    feishuAppConfigured() &&
+    Boolean(process.env.FEISHU_CHAT_ID)
 
-  const result = await feishuSend(card)
+  let result: { ok: boolean; detail: string }
+  if (useAppChannel) {
+    const cardJobs = candidates.map(({ job }) => job.id)
+    const entries = (await assembleEntries(cardJobs, prefs)) as CardJobEntry[]
+    result = await sendAppCard(process.env.FEISHU_CHAT_ID!, buildPushCard(entries, cardJobs))
+  } else {
+    const lines = candidates.map(({ job, score }) => {
+      const scoreText = `【匹配 ${score.final} 分】`
+      const highlight = score.llmHighlight ? `\n看点：${score.llmHighlight}` : ''
+      const digest = jdDigest(job)
+      const act = (action: string, label: string) =>
+        `[${label}](${WEB_BASE}/jobs?focus=${job.id}&action=${action})`
+      return (
+        `**${job.company}** · ${job.title} · ${salaryText(job)} · ${job.location || '地点未知'} ${scoreText}${highlight}\n` +
+        `JD 摘要：${digest || '（无 JD 正文）'}\n` +
+        `${act('interested', '感兴趣')} ${act('pass', '不合适')} ${act('applied', '已投递')} ｜ [查看 JD](${job.sourceUrl})`
+      )
+    })
+    const card = {
+      msg_type: 'interactive',
+      card: {
+        config: { wide_screen_mode: true },
+        header: {
+          template: 'blue',
+          title: { tag: 'plain_text', content: `NextCareer 今日新岗位 ${candidates.length} 条` },
+        },
+        elements: [
+          ...candidates.map((_, i) => ({
+            tag: 'div',
+            text: { tag: 'lark_md', content: lines[i] },
+          })),
+          { tag: 'hr' },
+          {
+            tag: 'note',
+            elements: [{ tag: 'plain_text', content: '完整列表见 Web（岗位流按匹配分排序）' }],
+          },
+        ],
+      },
+    }
+    result = await feishuSend(card)
+  }
   if (!result.ok) {
     await sendAlert(`飞书推送失败（${result.detail}）`)
     return { pushed: 0, silent: false, ok: false, detail: result.detail }

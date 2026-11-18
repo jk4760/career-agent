@@ -29,6 +29,14 @@ services:
       MOONSHOT_MODEL: ${MOONSHOT_MODEL:-}
       FEISHU_WEBHOOK_URL: ${FEISHU_WEBHOOK_URL:-}
       FEISHU_WEBHOOK_SECRET: ${FEISHU_WEBHOOK_SECRET:-}
+      # M4.5：飞书自建应用（卡片内交互）；缺省时发送回退 webhook、回调路由 503
+      FEISHU_APP_ID: ${FEISHU_APP_ID:-}
+      FEISHU_APP_SECRET: ${FEISHU_APP_SECRET:-}
+      FEISHU_VERIFICATION_TOKEN: ${FEISHU_VERIFICATION_TOKEN:-}
+      FEISHU_ENCRYPT_KEY: ${FEISHU_ENCRYPT_KEY:-}
+      FEISHU_CHAT_ID: ${FEISHU_CHAT_ID:-}
+      FEISHU_SEND_CHANNEL: ${FEISHU_SEND_CHANNEL:-webhook}
+      FEISHU_ALERT_CHANNEL: ${FEISHU_ALERT_CHANNEL:-webhook}
     volumes:
       - uploads:/var/lib/nextcareer/uploads
     depends_on:

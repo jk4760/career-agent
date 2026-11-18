@@ -52,6 +52,8 @@ export const feedbackEvents = pgTable(
     /** M4：结构化反馈维度——不合适必选六选一（职能/薪资/地点/职级/公司/其他）；感兴趣可选三选 */
     reason: text('reason'),
     comment: text('comment'),
+    /** M4.5：撤销时间（软取消，不删行）；派生状态/调整分查询统一过滤 canceled_at IS NULL */
+    canceledAt: timestamp('canceled_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [

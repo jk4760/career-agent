@@ -1,0 +1,1 @@
+ALTER TABLE "feedback_events" ADD COLUMN "canceled_at" timestamp with time zone;
