@@ -16,9 +16,9 @@ import { cn } from '@/lib/utils'
 const GOTO_SETTINGS = '__goto_settings__'
 
 /**
- * AI 助手面板（§6.6，全局第三栏）：宽 224px，默认展开，展开 ↔ 收起 200ms 过渡。
- * 收起为 30px 竖条（居中竖排「AI 对话」）。头部 = 标题 + 模型下拉 + 收起图标。
- * v0.5 仅骨架：发送禁用，真实对话属 M5。
+ * AI 助手面板（§6.6，全局第三栏）：宽 384px（2026-11 用户反馈加宽），默认展开，
+ * 展开 ↔ 收起 200ms 过渡。收起为 30px 竖条（居中竖排「AI 对话」）。
+ * 头部 = 标题 + 模型下拉 + 收起图标。v0.5 仅骨架：发送禁用，真实对话属 M5。
  */
 export function AssistantPanel() {
   const repo = useRepository()
@@ -46,7 +46,7 @@ export function AssistantPanel() {
     <aside
       className={cn(
         'sticky top-0 hidden h-screen shrink-0 flex-col border-l bg-card transition-[width] duration-200 md:flex',
-        collapsed ? 'w-[30px]' : 'w-56',
+        collapsed ? 'w-[30px]' : 'w-96',
       )}
     >
       {collapsed ? (

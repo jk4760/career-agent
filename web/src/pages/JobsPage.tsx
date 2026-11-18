@@ -22,6 +22,7 @@ export default function JobsPage() {
   const [tab, setTab] = useState<TabValue>('all')
   const [sort, setSort] = useState<'score' | 'time'>('score')
   const [jobs, setJobs] = useState<JobWithStatus[]>([])
+  const [loaded, setLoaded] = useState(false) // 首次拉取完成前不渲染空态（防「暂无岗位」闪屏）
   // M4 飞书深链：/jobs?focus=<id>&action=<interested|pass|applied>
   const [searchParams, setSearchParams] = useSearchParams()
   const focusId = searchParams.get('focus')
@@ -32,6 +33,7 @@ export default function JobsPage() {
     const list = await repo.listJobs(tab === 'all' ? undefined : tab, sort)
     // 「全部」tab 排除「不合适」（纯前端过滤；反馈事件保留，「不合适」tab 完整不变）
     setJobs(tab === 'all' ? list.filter((j) => j.status !== 'pass') : list)
+    setLoaded(true)
   }, [repo, tab, sort])
 
   useEffect(() => {
@@ -122,7 +124,9 @@ export default function JobsPage() {
       )}
 
       {jobs.length === 0 ? (
-        tab === 'all' ? (
+        !loaded ? (
+          <p className="py-16 text-center text-sm text-muted-foreground">加载中…</p>
+        ) : tab === 'all' ? (
           <EmptyState
             icon={Inbox}
             title="暂无岗位"

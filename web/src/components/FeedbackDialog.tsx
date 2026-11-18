@@ -82,9 +82,15 @@ export function FeedbackDialog({
         )}
 
         <Textarea
-          placeholder="附一句话反馈（可留空），如：太偏运营了"
+          placeholder="补充说明（可留空；自定义内容存为备注，原因请选上方标签）"
           value={comment}
-          onChange={(e) => setComment(e.target.value)}
+          onChange={(e) => {
+            const v = e.target.value
+            setComment(v)
+            // 修复：「不合适」输入自定义说明时自动选中「其他」，确认不再灰
+            // （结构化原因仍走六选一枚举；自定义文字保留为 comment）
+            if (action === 'pass' && !reason && v.trim()) setReason('其他')
+          }}
           rows={3}
         />
         <DialogFooter>

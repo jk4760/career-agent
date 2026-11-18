@@ -56,7 +56,9 @@ export function JobRow({ job, onFeedback, defaultExpanded = false, initialAction
 
   return (
     <div className="group/row">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 sm:flex-nowrap">
+      {/* 允许换行：AI 面板加宽后行宽变窄时，右侧 pill/按钮组整体下折，
+          而不是把标题压没（修复 2 的配套响应式调整） */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
         {/* 左 + 中：首字符方块、标题与公司（点击展开） */}
         <button
           type="button"
