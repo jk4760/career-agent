@@ -373,10 +373,10 @@ export default function MaterialsPage() {
           </span>
         </div>
 
-        <div className="hidden grid-cols-[minmax(0,1.25fr)_minmax(180px,0.9fr)_minmax(120px,0.55fr)_72px_16px] items-center gap-4 px-5 py-2.5 text-xs text-muted-foreground @min-[900px]:grid">
+        <div className="hidden grid-cols-[minmax(0,1.25fr)_minmax(150px,0.8fr)_minmax(130px,0.7fr)_64px_16px] items-center gap-4 px-5 py-2.5 text-xs text-muted-foreground @min-[720px]:grid">
           <span>故事 / 项目与标签</span>
           <span>相关附件</span>
-          <span className="text-right">关键成果</span>
+          <span className="text-right @min-[720px]:pr-6">关键成果</span>
           <span className="text-right">最近更新</span>
           <span />
         </div>
@@ -424,7 +424,7 @@ export default function MaterialsPage() {
                   key={material.id}
                   type="button"
                   className={cn(
-                    'relative grid w-full cursor-pointer grid-cols-1 gap-4 border-b px-5 py-4 text-left outline-none transition-colors last:border-0 hover:bg-slate-50/80 focus-visible:z-10 focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-ring/50 @min-[900px]:grid-cols-[minmax(0,1.25fr)_minmax(180px,0.9fr)_minmax(120px,0.55fr)_72px_16px] @min-[900px]:items-center',
+                    'relative grid w-full cursor-pointer grid-cols-1 gap-4 border-b px-5 py-4 text-left outline-none transition-colors last:border-0 hover:bg-slate-50/80 focus-visible:z-10 focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-ring/50 @min-[720px]:grid-cols-[minmax(0,1.25fr)_minmax(150px,0.8fr)_minmax(130px,0.7fr)_64px_16px] @min-[720px]:items-center',
                     active && 'bg-blue-50/70',
                   )}
                   onClick={() => {
@@ -445,7 +445,7 @@ export default function MaterialsPage() {
                       {material.project.trim().slice(0, 2)}
                     </span>
                     <div className="min-w-0">
-                      <div className="truncate text-sm font-semibold" title={material.title}>
+                      <div className="line-clamp-2 text-sm font-semibold" title={material.title}>
                         {material.title}
                       </div>
                       <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
@@ -460,27 +460,27 @@ export default function MaterialsPage() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-[72px_minmax(0,1fr)] items-center gap-3 @min-[900px]:block">
-                    <span className="text-xs text-muted-foreground @min-[900px]:hidden">相关附件</span>
+                  <div className="grid grid-cols-[72px_minmax(0,1fr)] items-center gap-3 @min-[720px]:block">
+                    <span className="text-xs text-muted-foreground @min-[720px]:hidden">相关附件</span>
                     <AttachmentListCell material={material} />
                   </div>
 
-                  <div className="flex items-center justify-between gap-4 @min-[900px]:block @min-[900px]:text-right">
-                    <span className="text-xs text-muted-foreground @min-[900px]:hidden">关键成果</span>
-                    <span className="line-clamp-2 text-sm font-semibold tabular-nums" title={material.metrics ?? undefined}>
+                  <div className="flex items-center justify-between gap-4 @min-[720px]:block @min-[720px]:pr-6 @min-[720px]:text-right">
+                    <span className="text-xs text-muted-foreground @min-[720px]:hidden">关键成果</span>
+                    <span className="line-clamp-3 text-sm font-semibold tabular-nums" title={material.metrics ?? undefined}>
                       {material.metrics || '—'}
                     </span>
                   </div>
 
-                  <div className="flex items-center justify-between gap-4 @min-[900px]:block @min-[900px]:text-right">
-                    <span className="text-xs text-muted-foreground @min-[900px]:hidden">最近更新</span>
+                  <div className="flex items-center justify-between gap-4 @min-[720px]:block @min-[720px]:text-right">
+                    <span className="text-xs text-muted-foreground @min-[720px]:hidden">最近更新</span>
                     <span className="text-xs text-slate-500 tabular-nums">
                       {material.updatedAt.slice(5, 10).replace('-', '.')}
                       <span className="block text-[10px] text-muted-foreground/70">{material.updatedAt.slice(0, 4)}</span>
                     </span>
                   </div>
 
-                  <ChevronRight className="hidden size-4 text-slate-300 @min-[900px]:block" />
+                  <ChevronRight className="hidden size-4 text-slate-300 @min-[720px]:block" />
                 </button>
               )
             })
