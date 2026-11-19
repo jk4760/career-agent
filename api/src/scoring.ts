@@ -181,7 +181,7 @@ interface FeedbackEventRow {
   canceledAt?: Date | null
 }
 
-/** 反馈调整层（§3.1）：不合适 −20 / 感兴趣 +10，职能词连坐，60 天硬衰减，事件本岗除外 */
+/** 反馈调整层（§3.1）：不合适 −20 / 感兴趣 +10，职能词连坐，60 天硬衰减，事件本岗除外；每岗仅取最新一条相关反馈调整一次 */
 export function feedbackAdjustments(
   jobs: JobRow[],
   events: FeedbackEventRow[],
@@ -191,9 +191,9 @@ export function feedbackAdjustments(
   const keywords = [...prefs.roles, ...prefs.keywordsInclude].filter(Boolean)
   const result = new Map<string, ScoreBreakdown['feedback']>()
   const cutoff = 60
-  // M4.5：撤销的反馈不参与调整（防御性过滤，调用方通常已过滤）
-  const active = events.filter((e) => !e.canceledAt)
-  // 每个反馈事件：算出该岗位 title 命中的职能词
+  const active = events
+    .filter((e) => !e.canceledAt)
+    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
   const adjustments = active.flatMap((e) => {
     const age = daysSince(e.createdAt.toISOString(), now)
     if (age === null || age > cutoff) return []
@@ -204,11 +204,14 @@ export function feedbackAdjustments(
     return hits.map((keyword) => ({ jobId: e.jobId, keyword, delta, action: e.action }))
   })
   for (const job of jobs) {
-    const items = adjustments
-      .filter((a) => a.jobId !== job.id && a.delta !== 0 && hitAny(job.title, [a.keyword]).length)
-      .map((a) => ({ keyword: a.keyword, delta: a.delta, action: a.action }))
-    if (items.length) {
-      result.set(job.id, { total: items.reduce((s, i) => s + i.delta, 0), items })
+    const latest = adjustments.find(
+      (a) => a.jobId !== job.id && a.delta !== 0 && hitAny(job.title, [a.keyword]).length,
+    )
+    if (latest) {
+      result.set(job.id, {
+        total: latest.delta,
+        items: [{ keyword: latest.keyword, delta: latest.delta, action: latest.action }],
+      })
     }
   }
   return result
