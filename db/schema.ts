@@ -188,3 +188,51 @@ export const messages = pgTable(
   },
   (t) => [index('idx_messages_conversation_created').on(t.conversationId, t.createdAt)],
 )
+
+export const resumeStrategySettings = pgTable('resume_strategy_settings', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  selection: jsonb('selection').notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+export const resumeStrategyReports = pgTable(
+  'resume_strategy_reports',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    version: integer('version').notNull(),
+    status: text('status').notNull(),
+    report: jsonb('report'),
+    inputHash: text('input_hash').notNull(),
+    selection: jsonb('selection').notNull(),
+    sourceJobIds: jsonb('source_job_ids').notNull(),
+    model: text('model').notNull(),
+    usageRequestId: uuid('usage_request_id'),
+    errorCode: text('error_code'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+  },
+  (t) => [unique('resume_strategy_reports_version_key').on(t.version)],
+)
+
+export const reportSourceSnapshots = pgTable(
+  'report_source_snapshots',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    reportId: uuid('report_id').notNull().references(() => resumeStrategyReports.id),
+    sourceType: text('source_type').notNull(),
+    sourceId: text('source_id').notNull(),
+    version: text('version').notNull(),
+    hash: text('hash').notNull(),
+    content: text('content').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('idx_report_snapshots_report').on(t.reportId)],
+)
+
+export const reportPushLog = pgTable('report_push_log', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  reportId: uuid('report_id').notNull().references(() => resumeStrategyReports.id),
+  mode: text('mode').notNull(),
+  inputHash: text('input_hash').notNull(),
+  pushedAt: timestamp('pushed_at', { withTimezone: true }).notNull().defaultNow(),
+})

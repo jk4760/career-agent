@@ -1,0 +1,160 @@
+import assert from 'node:assert/strict'
+import { after, before, beforeEach, test } from 'node:test'
+import { desc, eq } from 'drizzle-orm'
+import { migrate } from 'drizzle-orm/postgres-js/migrator'
+
+const testUrl = new URL(process.env.DATABASE_URL!)
+testUrl.pathname = '/nextcareer_m5_test'
+process.env.DATABASE_URL = testUrl.toString()
+process.env.MOONSHOT_API_KEY = 'fake-key'
+process.env.MOONSHOT_MODEL = 'fake-report'
+process.env.RESUME_STRATEGY_ENABLED = 'true'
+process.env.AI_BUDGET_ENFORCE = 'true'
+for (const name of ['INPUT', 'OUTPUT', 'CACHE_HIT', 'CACHE_WRITE_5M', 'CACHE_WRITE_1H']) {
+  process.env[`AI_PRICE_FAKE_REPORT_${name}_CNY_PER_MTOK`] = '1'
+}
+
+const { db, client } = await import('../db')
+const schema = await import('../../../db/schema')
+const { generateReport, reportSnapshots, reportState } = await import('./report')
+
+const PREF_ID = '00000000-0000-4000-8000-00000000a501'
+const JOB_A = '00000000-0000-4000-8000-00000000a502'
+const JOB_B = '00000000-0000-4000-8000-00000000a503'
+const MATERIAL_ID = '00000000-0000-4000-8000-00000000a504'
+
+async function reset() {
+  await db.delete(schema.reportSourceSnapshots)
+  await db.delete(schema.reportPushLog)
+  await db.delete(schema.resumeStrategyReports)
+  await db.delete(schema.resumeStrategySettings)
+  await db.delete(schema.feedbackEvents)
+  await db.delete(schema.jobs)
+  await db.delete(schema.materials)
+  await db.delete(schema.preferences)
+  await db.delete(schema.modelUsageRequests)
+  await db.delete(schema.modelBudgetDays)
+  await db.delete(schema.modelBudgetAlerts)
+  await db.insert(schema.preferences).values({
+    id: PREF_ID, roles: ['产品经理'], locations: ['上海'], keywordsInclude: ['AI'],
+    backgroundText: '虚构经历：负责一个虚构项目，指标提升 10%。', updatedAt: new Date(),
+  })
+  await db.insert(schema.jobs).values({
+    id: JOB_A, title: '虚构 AI 产品经理', company: '虚构公司', location: '上海', source: 'fake',
+    sourceUrl: 'https://example.com/a', description: '虚构岗位要求：负责 AI 产品规划。', dedupKey: 'fake-a',
+  })
+  await db.insert(schema.feedbackEvents).values({ jobId: JOB_A, action: 'interested' })
+  await db.insert(schema.materials).values({
+    id: MATERIAL_ID, project: '虚构项目', title: '虚构素材', content: '虚构素材正文', updatedAt: new Date(),
+  })
+}
+
+before(async () => {
+  await migrate(db, { migrationsFolder: '/app/api/drizzle' })
+})
+beforeEach(reset)
+after(async () => {
+  await reset()
+  await client.end()
+})
+
+function fakeReport() {
+  return {
+    resume_count: 1,
+    overview: '虚构报告概览',
+    directions: [{
+      name: '虚构方向', summary: '虚构摘要', key_capabilities: ['虚构能力一', '虚构能力二'],
+      priority_experiences: [], evidence: [{ text: '指标提升 10%', source_type: 'resume', source_id: PREF_ID }], gaps: [],
+    }],
+    source_summary: { interested_job_count: 1, resume_id: PREF_ID, resume_name: '当前简历（个人背景）', material_ids: [], material_count: 0 },
+  }
+}
+
+function upstream(report: unknown, finishReason = 'stop') {
+  return new Response(JSON.stringify({
+    choices: [{ message: { content: JSON.stringify(report) }, finish_reason: finishReason }],
+    usage: { prompt_tokens: 100, completion_tokens: 50 },
+  }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+}
+
+async function waitFor(reportId: string, status: string) {
+  for (let index = 0; index < 100; index++) {
+    const [row] = await db.select().from(schema.resumeStrategyReports).where(eq(schema.resumeStrategyReports.id, reportId))
+    if (row.status === status) return row
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  }
+  throw new Error('报告任务未按预期结束')
+}
+
+test('首次生成使用一次严格 fake upstream，no_change 零调用', async () => {
+  let calls = 0
+  globalThis.fetch = async (_input, init) => {
+    calls += 1
+    const body = JSON.parse(String(init?.body))
+    assert.equal(body.reasoning_effort, 'low')
+    assert.equal(body.max_completion_tokens, 4000)
+    assert.equal(body.response_format.json_schema.strict, true)
+    return upstream(fakeReport())
+  }
+  const created = await generateReport()
+  assert.equal(created.noChange, false)
+  const done = await waitFor(created.report.id, 'done')
+  assert.equal((done.report as { directions: unknown[] }).directions.length, 1)
+  assert.equal(calls, 1)
+  const again = await generateReport()
+  assert.equal(again.noChange, true, JSON.stringify({ before: created.report.inputHash, after: again.report.inputHash, status: again.report.status }))
+  assert.equal(calls, 1)
+})
+
+test('撤销进入 removed；素材变化提示过时，历史快照保持原文', async () => {
+  globalThis.fetch = async () => upstream(fakeReport())
+  const created = await generateReport()
+  await waitFor(created.report.id, 'done')
+  await db.insert(schema.jobs).values({
+    id: JOB_B, title: '虚构岗位 B', company: '虚构公司', source: 'fake', sourceUrl: 'https://example.com/b', description: '虚构要求 B', dedupKey: 'fake-b',
+  })
+  await db.insert(schema.feedbackEvents).values({ jobId: JOB_B, action: 'interested' })
+  let state = await reportState()
+  assert.deepEqual(state.diff.added_job_ids, [JOB_B])
+  await db.update(schema.feedbackEvents).set({ canceledAt: new Date() }).where(eq(schema.feedbackEvents.jobId, JOB_B))
+  state = await reportState()
+  assert.equal(state.stale, false, JSON.stringify({ inputHash: state.inputHash, currentHash: state.current?.inputHash, diff: state.diff }))
+  await db.update(schema.materials).set({ content: '虚构素材的新正文', updatedAt: new Date() }).where(eq(schema.materials.id, MATERIAL_ID))
+  state = await reportState()
+  assert.equal(state.stale, false)
+  const history = await reportSnapshots(created.report.id)
+  assert.equal(history?.snapshots.find((item) => item.sourceId === PREF_ID)?.content.includes('指标提升 10%'), true)
+})
+
+test('截断和 JSON 校验失败不覆盖上一份成功报告', async () => {
+  globalThis.fetch = async () => upstream(fakeReport())
+  const created = await generateReport()
+  await waitFor(created.report.id, 'done')
+  await db.insert(schema.jobs).values({
+    id: JOB_B, title: '虚构岗位 B', company: '虚构公司', source: 'fake', sourceUrl: 'https://example.com/b', description: '虚构要求 B', dedupKey: 'fake-b',
+  })
+  await db.insert(schema.feedbackEvents).values({ jobId: JOB_B, action: 'interested' })
+  globalThis.fetch = async () => upstream(fakeReport(), 'length')
+  const truncated = await generateReport()
+  const truncatedRow = await waitFor(truncated.report.id, 'truncated')
+  assert.equal(truncatedRow.status, 'truncated')
+  assert.equal((await reportState()).current.id, created.report.id)
+  await db.update(schema.jobs).set({ description: '虚构岗位要求再次变化' }).where(eq(schema.jobs.id, JOB_B))
+  globalThis.fetch = async () => upstream({ invalid: true })
+  const failed = await generateReport()
+  await waitFor(failed.report.id, 'error')
+  assert.equal((await reportState()).current.id, created.report.id)
+})
+
+test('并发相同输入复用进行中任务，不重复调用', async () => {
+  let calls = 0
+  globalThis.fetch = async () => {
+    calls += 1
+    await new Promise((resolve) => setTimeout(resolve, 80))
+    return upstream(fakeReport())
+  }
+  const [first, second] = await Promise.all([generateReport(), generateReport()])
+  assert.equal(first.report.id, second.report.id)
+  await waitFor(first.report.id, 'done')
+  assert.equal(calls, 1)
+})
