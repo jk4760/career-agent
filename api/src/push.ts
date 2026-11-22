@@ -5,8 +5,8 @@
 // M4.5 施工项 4：双通道——FEISHU_SEND_CHANNEL=webhook（现状）/ app（自建应用三态卡片）；
 // 未配齐 app 变量时回退 webhook，不允许静默半配置状态；告警通道独立开关（灰度期仍 webhook）
 import { createHmac } from 'node:crypto'
-import { desc, isNull } from 'drizzle-orm'
-import { feedbackEvents, jobs, pushLog } from '../../db/schema'
+import { desc, eq, isNull } from 'drizzle-orm'
+import { feedbackEvents, jobs, pushLog, reportPushLog, resumeStrategyReports } from '../../db/schema'
 import { db } from './db'
 import { assembleEntries, buildCardShards, buildPushCard, type CardJobEntry } from './feishu/card'
 import { sendAppCard, sendAppText } from './feishu/sender'
@@ -151,7 +151,28 @@ export async function selectCandidates(prefs: Prefs, now: Date): Promise<Candida
   return candidates.slice(0, TOP_N)
 }
 
-export async function pushJobs(prefs: Prefs): Promise<{
+async function reportForPush(mode: string) {
+  if (process.env.RESUME_STRATEGY_FEISHU_PUSH_ENABLED !== 'true') return null
+  const [report] = await db
+    .select()
+    .from(resumeStrategyReports)
+    .where(eq(resumeStrategyReports.status, 'done'))
+    .orderBy(desc(resumeStrategyReports.version))
+    .limit(1)
+  if (!report) return null
+  const logs = await db
+    .select()
+    .from(reportPushLog)
+    .where(eq(reportPushLog.reportId, report.id))
+    .orderBy(desc(reportPushLog.pushedAt))
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(new Date())
+  if (mode === 'collect-and-push') {
+    return logs.some((log) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(log.pushedAt) === today) ? null : report
+  }
+  return logs[0]?.inputHash === report.inputHash ? null : report
+}
+
+export async function pushJobs(prefs: Prefs, mode = 'push-only'): Promise<{
   pushed: number
   silent: boolean
   ok: boolean
@@ -177,7 +198,15 @@ export async function pushJobs(prefs: Prefs): Promise<{
       candidates.map(({ job }) => job.id),
       prefs,
     )) as CardJobEntry[]
-    const shards = buildCardShards(entries)
+    const report = await reportForPush(mode)
+    let leadingElements: Record<string, unknown>[] = []
+    if (report) {
+      const { buildReportSummaryCard } = await import('./feishu/reportCard')
+      const { reportState } = await import('./ai/report')
+      const summary = buildReportSummaryCard(report, await reportState())
+      leadingElements = (summary.body as { elements: Record<string, unknown>[] }).elements
+    }
+    const shards = buildCardShards(entries, { leadingElements })
     console.log(`[push] 通道=app 分片=${shards.length}（元素数 ${shards.map((s) => s.elements).join('/')}，岗位数 ${shards.map((s) => s.jobIds.length).join('/')}）`)
     let loggedCount = 0
     result = { ok: true, detail: 'ok' }
@@ -197,6 +226,9 @@ export async function pushJobs(prefs: Prefs): Promise<{
     if (!result.ok) {
       await sendAlert(`飞书推送失败（${result.detail}）`)
       return { pushed: loggedCount, silent: false, ok: false, detail: result.detail }
+    }
+    if (report) {
+      await db.insert(reportPushLog).values({ reportId: report.id, mode, inputHash: report.inputHash })
     }
     return { pushed: candidates.length, silent: false, ok: true, detail: 'ok' }
   } else {

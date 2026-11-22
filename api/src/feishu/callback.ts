@@ -87,6 +87,21 @@ export const feishuRoute = new Hono().post('/callback', async (c) => {
     : []
   log('card.action.trigger stage=%s jobId=%s', stage, jobId)
 
+  if (value?.action === 'resume_strategy_update') {
+    if (process.env.RESUME_STRATEGY_FEISHU_ACTION_ENABLED !== 'true') {
+      return c.json(toastResponse('warning', '报告更新入口尚未启用'))
+    }
+    try {
+      const { generateReport } = await import('../ai/report')
+      const result = await generateReport()
+      return c.json(toastResponse('success', result.noChange ? '当前无需更新' : '已开始更新，完成后会推送结果'))
+    } catch (error) {
+      const code = error instanceof Error ? error.message : 'REPORT_ERROR'
+      const message = code === 'REPORT_BUSY' ? '已有更新任务进行中' : code === 'BUDGET_EXCEEDED' ? '今日模型预算已用完' : code === 'REPORT_DAILY_LIMIT' ? '今日更新次数已用完' : '暂时无法更新，请回 Web 查看'
+      return c.json(toastResponse('warning', message))
+    }
+  }
+
   if (!value || !jobId || !stage || !cardJobs.length) {
     return c.json(toastResponse('error', '卡片数据不完整，请重试'))
   }

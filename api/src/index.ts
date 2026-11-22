@@ -12,6 +12,7 @@ import { jobsRoute } from './routes/jobs'
 import { facetsRoute, materialsRoute } from './routes/materials'
 import { preferencesRoute } from './routes/preferences'
 import { questionsRoute } from './routes/questions'
+import { reportsRoute } from './routes/reports'
 
 const app = new Hono()
 
@@ -29,6 +30,7 @@ app.route('/api/facets', facetsRoute)
 app.route('/api/questions', questionsRoute)
 app.route('/api/preferences', preferencesRoute)
 app.route('/api/ai', aiRoute)
+app.route('/api/reports', reportsRoute)
 
 // M4 内网接口：不挂 /api 前缀，nginx 不转发，仅 compose 内网（collector / ops 脚本）可达
 app.route('/internal', internalRoute)

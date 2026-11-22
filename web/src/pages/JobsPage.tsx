@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Inbox } from 'lucide-react'
 import { EmptyState } from '@/components/EmptyState'
 import { JobRow } from '@/components/JobRow'
+import { ReportCard } from '@/components/reports/ReportCard'
+import { ReportDetail } from '@/components/reports/ReportDetail'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useRepository } from '@/lib/repository'
 import type { FeedbackAction, JobStatus, JobWithStatus } from '@/types'
@@ -28,6 +30,9 @@ export default function JobsPage() {
   const focusId = searchParams.get('focus')
   const focusAction = searchParams.get('action') as FeedbackAction | null
   const [focusJob, setFocusJob] = useState<JobWithStatus | null>(null)
+  const [reportId, setReportId] = useState<string | null>(null)
+  const [basisSignal, setBasisSignal] = useState(0)
+  const returnScroll = useRef(0)
 
   const reload = useCallback(async () => {
     const list = await repo.listJobs(tab === 'all' ? undefined : tab, sort)
@@ -60,6 +65,22 @@ export default function JobsPage() {
     comment: string,
   ) => {
     await repo.addFeedback(jobId, action, reason, comment)
+  }
+
+  if (reportId) {
+    return (
+      <ReportDetail
+        reportId={reportId}
+        onBack={() => {
+          setReportId(null)
+          requestAnimationFrame(() => window.scrollTo({ top: returnScroll.current }))
+        }}
+        onAdjust={() => {
+          setReportId(null)
+          setBasisSignal((value) => value + 1)
+        }}
+      />
+    )
   }
 
   return (
@@ -100,6 +121,17 @@ export default function JobsPage() {
           <span className="text-sm text-muted-foreground tabular-nums">共 {jobs.length} 条</span>
         </div>
       </div>
+
+      {tab === 'interested' && (
+        <ReportCard
+          refreshKey={jobs.map((job) => `${job.id}:${job.status}:${job.collectedAt}`).join('|')}
+          basisSignal={basisSignal}
+          onOpenReport={(id) => {
+            returnScroll.current = window.scrollY
+            setReportId(id)
+          }}
+        />
+      )}
 
       {/* M4 飞书深链定位卡：置顶展开，可带预选动作直接弹反馈窗 */}
       {focusJob && (

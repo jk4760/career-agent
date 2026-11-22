@@ -47,7 +47,7 @@ export const internalRoute = new Hono()
     const mode = typeof body.mode === 'string' ? body.mode : 'push-only'
     console.log(`[push] 开始推送（mode=${mode}）`)
     const prefs = await loadPrefs()
-    const result = await pushJobs(prefs)
+    const result = await pushJobs(prefs, mode)
     console.log(`[push] 结果：${JSON.stringify(result)}`)
     return c.json(result, result.ok ? 200 : 500)
   })

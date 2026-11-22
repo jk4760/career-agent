@@ -174,9 +174,9 @@ function jobBlock(entry: CardJobEntry, cardJobs: string[]): Json {
 export function buildPushCard(
   entries: CardJobEntry[],
   cardJobs: string[],
-  opts?: { title?: string },
+  opts?: { title?: string; leadingElements?: Json[] },
 ): Json {
-  const withHr: Json[] = []
+  const withHr: Json[] = [...(opts?.leadingElements ?? [])]
   entries.forEach((e, i) => {
     if (i > 0) withHr.push({ tag: 'hr' })
     withHr.push(jobBlock(e, cardJobs))
@@ -217,12 +217,14 @@ export interface CardShard {
 
 /** 动态拆分（修复 230099/11310）：按实际组件数 ≤195 贪心装箱分片，
  *  不丢岗不重岗；按钮里的 cardJobs 只带本片岗位 id（回调重建天然安全） */
-export function buildCardShards(entries: CardJobEntry[]): CardShard[] {
-  // 单岗元素成本（结构恒定，与 cardJobs 内容无关）：column_set+column+2md+按钮行(9) = 13，+1 块前 hr
+export function buildCardShards(
+  entries: CardJobEntry[],
+  opts?: { leadingElements?: Json[] },
+): CardShard[] {
   const costs = entries.map((e) => countElements(jobBlock(e, [e.job.id])) + 1)
   const groups: number[][] = []
   let cur: number[] = []
-  let curCost = 3 // hr + 底注 + footer hr
+  let curCost = 3 + countElements(opts?.leadingElements ?? [])
   entries.forEach((_, i) => {
     if (cur.length && curCost + costs[i] > CARD_ELEMENT_BUDGET) {
       groups.push(cur)
@@ -241,6 +243,7 @@ export function buildCardShards(entries: CardJobEntry[]): CardShard[] {
     const shardIds = shardEntries.map((e) => e.job.id)
     const card = buildPushCard(shardEntries, shardIds, {
       title: k > 1 ? `NextCareer 今日新岗位 ${total} 条（${i + 1}/${k}）` : undefined,
+      leadingElements: i === 0 ? opts?.leadingElements : undefined,
     })
     return { card, jobIds: shardIds, elements: countElements(card) }
   })
