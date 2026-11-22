@@ -34,7 +34,7 @@ export function JobRow({ job, onFeedback, defaultExpanded = false, initialAction
           第一梯队 = 岗位标题（给足宽度，允许两行不截断）；
           第二梯队 = LLM 理由标签 + 规则事实标签（独占一行，完整展示）；
           第三梯队 = 匹配分/地点/薪资/来源/日期（降为一行灰字，不再用 pill 抢宽） */}
-      <div className="flex items-start gap-3 px-4 py-3">
+      <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-start">
         {/* 左 + 中：首字符方块、标题与公司（点击展开） */}
         <button
           type="button"
@@ -78,7 +78,7 @@ export function JobRow({ job, onFeedback, defaultExpanded = false, initialAction
           </span>
         </button>
 
-        <div className="flex shrink-0 items-center gap-1.5">
+        <div className="flex w-full flex-wrap items-center justify-end gap-1.5 sm:w-auto sm:shrink-0">
           <StatusBadge status={job.status} />
           <span className="mx-1 h-4 w-px bg-border max-sm:hidden" />
           <Button size="sm" variant="outline" onClick={() => setPendingAction('interested')}>
