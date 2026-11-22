@@ -11,7 +11,6 @@ const MUTATING = [
   'saveQuestion',
   'deleteQuestion',
   'savePreferences',
-  'saveAISettings',
   'putAttachmentFile',
 ] as const
 

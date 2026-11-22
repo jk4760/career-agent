@@ -51,9 +51,8 @@ export interface Repository {
   getPreferences(): Promise<Preferences>
   savePreferences(preferences: Preferences): Promise<Preferences>
 
-  /** AI 对话配置（6.7）：localStorage 持久化，保存后面板模型下拉立即联动 */
+  /** AI 配置只读：Key 由服务器管理，永不下发浏览器 */
   getAISettings(): Promise<AISettings>
-  saveAISettings(settings: AISettings): Promise<AISettings>
 }
 
 export const RepositoryContext = createContext<Repository | null>(null)

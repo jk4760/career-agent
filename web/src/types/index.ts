@@ -137,14 +137,58 @@ export interface PushLog {
   userReply: string | null
 }
 
-/**
- * AI 对话配置（6.7）：单个 OpenAI 兼容服务，不做多服务商配置（留 M5）。
- * localStorage 持久化（§7 豁免条款第二条）；API Key 仅本机存储，不提交任何服务器。
- */
 export interface AISettings {
+  provider: string
   baseUrl: string
-  apiKey: string
+  model: string
   models: string[]
+  configured: boolean
+  enabled: boolean
+  budget: {
+    totalCny: string
+    limitCny: string
+    percent: number
+    exhausted: boolean
+    enforce: boolean
+  }
+}
+
+export interface AIContextSelection {
+  includePreferences: boolean
+  resumeId: string | null
+  materialIds: string[]
+  jobIds: string[]
+}
+
+export interface AIContextEstimate {
+  totalChars: number
+  limitChars: number
+  exceeds: boolean
+  segments: {
+    sourceType: 'preferences' | 'resume' | 'material' | 'job'
+    sourceId: string
+    name: string
+    content: string
+    length: number
+    version: string
+    hash: string
+  }[]
+}
+
+export interface AIConversation {
+  id: string
+  title: string
+  model: string
+  contextSelection: AIContextSelection
+  updatedAt: string
+}
+
+export interface AIMessage {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  status: 'streaming' | 'done' | 'stopped' | 'error' | 'truncated'
+  createdAt: string
 }
 
 /** 能力域受控词表（capability_l1，只服务筛选，不承担身份） */

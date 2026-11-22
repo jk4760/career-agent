@@ -82,7 +82,7 @@ function segment(
   }
 }
 
-export async function assembleContext(selection: ContextSelection) {
+export async function assembleContext(selection: ContextSelection, enforceLimits = true) {
   if (selection.materialIds.length > CONTEXT_LIMITS.materials) {
     throw new ContextError(`素材最多选择 ${CONTEXT_LIMITS.materials} 个`)
   }
@@ -148,9 +148,11 @@ export async function assembleContext(selection: ContextSelection) {
     .filter((item) => item.sourceType === 'material')
     .reduce((sum, item) => sum + item.length, 0)
   const totalChars = segments.reduce((sum, item) => sum + item.length, 0)
-  if (resumeChars > CONTEXT_LIMITS.resumeChars) throw new ContextError('当前简历超过 6,000 字')
-  if (materialChars > CONTEXT_LIMITS.materialChars) throw new ContextError('素材合计超过 6,000 字')
-  if (totalChars > CONTEXT_LIMITS.totalChars) throw new ContextError('上下文超过 24,000 字')
+  const exceeds =
+    resumeChars > CONTEXT_LIMITS.resumeChars ||
+    materialChars > CONTEXT_LIMITS.materialChars ||
+    totalChars > CONTEXT_LIMITS.totalChars
+  if (enforceLimits && exceeds) throw new ContextError('上下文超过允许上限，请减少资料')
 
   return {
     selection,
@@ -159,7 +161,7 @@ export async function assembleContext(selection: ContextSelection) {
     materialChars,
     totalChars,
     limitChars: CONTEXT_LIMITS.totalChars,
-    exceeds: false,
+    exceeds,
     snapshot: {
       selection,
       sources: segments.map(({ content: _content, ...meta }) => meta),

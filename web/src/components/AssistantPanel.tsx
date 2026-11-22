@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { ChevronRight, Paperclip, SendHorizontal, Sparkles } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { ChevronDown, ChevronRight, Eye, Plus, SendHorizontal, Sparkles, Square, X } from 'lucide-react'
+import { ContextSelector } from '@/components/ai/ContextSelector'
+import { MarkdownContent } from '@/components/MarkdownContent'
 import { Button } from '@/components/ui/button'
 import {
   Select,
@@ -10,155 +11,313 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
+import {
+  createAIConversation,
+  getAIConversation,
+  listAIConversations,
+  saveAIContext,
+  stopAIChat,
+  streamAIChat,
+} from '@/lib/aiApi'
 import { useRepository } from '@/lib/repository'
 import { cn } from '@/lib/utils'
+import type { AIContextSelection, AIConversation, AIMessage, AISettings } from '@/types'
 
-const GOTO_SETTINGS = '__goto_settings__'
+const CURRENT_CONVERSATION_KEY = 'nextcareer.current-conversation.v1'
+const EMPTY_SELECTION: AIContextSelection = {
+  includePreferences: true,
+  resumeId: null,
+  materialIds: [],
+  jobIds: [],
+}
 
-/**
- * AI 助手面板（§6.6，全局第三栏）：宽 384px（2026-11 用户反馈加宽），默认展开，
- * 展开 ↔ 收起 200ms 过渡。收起为 30px 竖条（居中竖排「AI 对话」）。
- * 头部 = 标题 + 模型下拉 + 收起图标。v0.5 仅骨架：发送禁用，真实对话属 M5。
- */
 export function AssistantPanel() {
   const repo = useRepository()
-  const navigate = useNavigate()
   const [collapsed, setCollapsed] = useState(false)
-  const [models, setModels] = useState<string[]>([])
-  const [selectedModel, setSelectedModel] = useState('')
+  const [mobileOpen, setMobileOpen] = useState(false)
+  const [settings, setSettings] = useState<AISettings | null>(null)
+  const [conversations, setConversations] = useState<AIConversation[]>([])
+  const [currentId, setCurrentId] = useState('')
+  const [selection, setSelection] = useState<AIContextSelection>(EMPTY_SELECTION)
+  const [messages, setMessages] = useState<AIMessage[]>([])
   const [input, setInput] = useState('')
-  const [hint, setHint] = useState<string | null>(null)
+  const [sending, setSending] = useState(false)
+  const [assistantId, setAssistantId] = useState('')
+  const [contextOpen, setContextOpen] = useState(false)
+  const [contextPreview, setContextPreview] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const sendingRef = useRef(false)
+  const messageListRef = useRef<HTMLDivElement>(null)
 
-  // 模型下拉数据源 = 「AI 对话管理」页配置（6.7）；repo 变化时自动联动
+  const openConversation = async (id: string) => {
+    const detail = await getAIConversation(id)
+    setCurrentId(id)
+    setSelection(detail.contextSelection)
+    setMessages(detail.messages)
+    localStorage.setItem(CURRENT_CONVERSATION_KEY, id)
+  }
+
+  const newConversation = async () => {
+    const created = await createAIConversation()
+    const conversation = { ...created, title: '新对话' }
+    setConversations((current) => [conversation, ...current])
+    setCurrentId(created.id)
+    setSelection(created.contextSelection)
+    setMessages([])
+    localStorage.setItem(CURRENT_CONVERSATION_KEY, created.id)
+  }
+
   useEffect(() => {
-    void repo.getAISettings().then((s) => setModels(s.models))
+    void (async () => {
+      const config = await repo.getAISettings()
+      setSettings(config)
+      if (!config.enabled || !config.configured) return
+      const list = await listAIConversations()
+      setConversations(list)
+      const stored = localStorage.getItem(CURRENT_CONVERSATION_KEY)
+      const target = list.find((item) => item.id === stored) ?? list[0]
+      if (target) await openConversation(target.id)
+      else await newConversation()
+    })().catch((err) => setError(err instanceof Error ? err.message : 'AI 助手加载失败'))
   }, [repo])
 
-  useEffect(() => {
-    if (models.length === 0) {
-      setSelectedModel('')
-    } else if (!models.includes(selectedModel)) {
-      setSelectedModel(models[0])
+  const updateAssistant = (id: string, patch: Partial<AIMessage>) => {
+    setMessages((current) => current.map((message) => (message.id === id ? { ...message, ...patch } : message)))
+  }
+
+  const send = async () => {
+    if (sendingRef.current) {
+      if (assistantId) await stopAIChat(assistantId)
+      return
     }
-  }, [models, selectedModel])
+    const content = input.trim()
+    if (!content || !currentId || !settings?.enabled || !settings.configured || settings.budget.exhausted) return
+    sendingRef.current = true
+    setSending(true)
+    setError(null)
+    setInput('')
+    const clientRequestId = crypto.randomUUID()
+    const userId = `local-user-${clientRequestId}`
+    const localAssistantId = `local-assistant-${clientRequestId}`
+    setMessages((current) => [
+      ...current,
+      { id: userId, role: 'user', content, status: 'done', createdAt: new Date().toISOString() },
+      { id: localAssistantId, role: 'assistant', content: '', status: 'streaming', createdAt: new Date().toISOString() },
+    ])
+    let serverAssistantId = localAssistantId
+    try {
+      const response = await streamAIChat({ conversationId: currentId, content, clientRequestId })
+      if (!response.ok) {
+        const body = await response.json().catch(() => null)
+        throw new Error(body?.error ?? `发送失败（${response.status}）`)
+      }
+      const contentType = response.headers.get('content-type') ?? ''
+      if (contentType.includes('application/json')) {
+        const duplicate = await response.json()
+        if (duplicate.duplicate) {
+          serverAssistantId = duplicate.assistantMessageId
+          updateAssistant(localAssistantId, {
+            id: serverAssistantId,
+            content: duplicate.content,
+            status: duplicate.status,
+          })
+        }
+        return
+      }
+      if (!response.body) throw new Error('当前浏览器不支持流式响应')
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        buffer += decoder.decode(value, { stream: !done })
+        let boundary = buffer.indexOf('\n\n')
+        while (boundary >= 0) {
+          const packet = buffer.slice(0, boundary)
+          buffer = buffer.slice(boundary + 2)
+          boundary = buffer.indexOf('\n\n')
+          const event = packet.match(/^event:\s*(.+)$/m)?.[1]
+          const raw = packet.match(/^data:\s*(.+)$/m)?.[1]
+          if (!event || !raw) continue
+          const data = JSON.parse(raw)
+          if (event === 'meta') {
+            serverAssistantId = data.assistantMessageId
+            setAssistantId(serverAssistantId)
+            updateAssistant(localAssistantId, { id: serverAssistantId })
+          } else if (event === 'delta') {
+            setMessages((current) =>
+              current.map((message) =>
+                message.id === serverAssistantId
+                  ? { ...message, content: message.content + data.content }
+                  : message,
+              ),
+            )
+            const list = messageListRef.current
+            if (list && list.scrollHeight - list.scrollTop - list.clientHeight < 120) {
+              list.scrollTop = list.scrollHeight
+            }
+          } else if (event === 'done') {
+            updateAssistant(serverAssistantId, { status: data.status })
+          } else if (event === 'error') {
+            updateAssistant(serverAssistantId, { status: 'error' })
+            setError(`生成失败（${data.code}），可手动再次发送`)
+          }
+        }
+        if (done) break
+      }
+    } catch (err) {
+      updateAssistant(serverAssistantId, { status: 'error' })
+      setError(err instanceof Error ? err.message : '网络中断，可手动再次发送')
+    } finally {
+      sendingRef.current = false
+      setSending(false)
+      setAssistantId('')
+      const list = await listAIConversations().catch(() => null)
+      if (list) setConversations(list)
+    }
+  }
+
+  const applyContext = async (next: AIContextSelection) => {
+    if (!currentId) return
+    const result = await saveAIContext(currentId, next)
+    setSelection(next)
+    setContextOpen(false)
+    setContextPreview(false)
+    void result
+  }
+
+  const canSend = Boolean(
+    currentId &&
+      settings?.enabled &&
+      settings.configured &&
+      !settings.budget.exhausted &&
+      input.trim(),
+  )
+
+  const contextSummary = (
+    <div className="border-t px-3 py-2">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium">本次上下文</span>
+        <div className="flex items-center gap-1 text-xs">
+          <button type="button" className="flex items-center gap-0.5 text-primary" onClick={() => { setContextPreview(true); setContextOpen(true) }}>
+            <Eye className="size-3" />查看
+          </button>
+          <button type="button" className="rounded p-0.5 text-muted-foreground" aria-label="调整上下文" onClick={() => { setContextPreview(false); setContextOpen(true) }}>
+            <ChevronDown className="size-3.5" />
+          </button>
+        </div>
+      </div>
+      <button
+        type="button"
+        className="mt-1.5 flex w-full flex-wrap gap-1 text-left"
+        onClick={() => { setContextPreview(false); setContextOpen(true) }}
+      >
+        <span className={cn('rounded px-1.5 py-0.5 text-[10px]', selection.includePreferences ? 'bg-accent text-accent-foreground' : 'bg-muted text-muted-foreground')}>求职偏好</span>
+        <span className={cn('rounded px-1.5 py-0.5 text-[10px]', selection.resumeId ? 'bg-accent text-accent-foreground' : 'bg-muted text-muted-foreground')}>当前简历</span>
+        <span className={cn('rounded px-1.5 py-0.5 text-[10px]', selection.materialIds.length ? 'bg-accent text-accent-foreground' : 'bg-muted text-muted-foreground')}>素材 {selection.materialIds.length}</span>
+      </button>
+      <p className="mt-1 text-[10px] text-muted-foreground">仅当前会话生效</p>
+    </div>
+  )
+
+  const panel = (mobile: boolean) => (
+    <>
+      <div className="flex h-14 shrink-0 items-center gap-1.5 border-b px-3">
+        <Sparkles className="size-4 shrink-0 text-primary" />
+        <span className="shrink-0 text-sm font-medium">AI 助手</span>
+        <Select value={currentId} onValueChange={(value) => void openConversation(value as string)}>
+          <SelectTrigger size="sm" className="min-w-0 flex-1 border-transparent bg-transparent px-1.5 text-xs shadow-none">
+            <SelectValue>{currentId ? undefined : settings?.enabled ? '新对话' : '未配置模型'}</SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            {conversations.map((conversation) => (
+              <SelectItem key={conversation.id} value={conversation.id}>{conversation.title}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button variant="ghost" size="icon-xs" aria-label="新建会话" onClick={() => void newConversation()} disabled={!settings?.enabled || !settings.configured}>
+          <Plus />
+        </Button>
+        <Button variant="ghost" size="icon-xs" aria-label={mobile ? '返回' : '收起 AI 助手面板'} onClick={() => mobile ? setMobileOpen(false) : setCollapsed(true)}>
+          {mobile ? <X /> : <ChevronRight />}
+        </Button>
+      </div>
+
+      <div ref={messageListRef} className="flex-1 space-y-3 overflow-y-auto p-3">
+        {!settings?.enabled || !settings.configured ? (
+          <div className="flex flex-col items-center gap-2 py-10 text-center">
+            <Sparkles className="size-6 text-muted-foreground" />
+            <p className="text-sm font-medium">{settings?.enabled ? '未配置模型' : 'AI 对话尚未启用'}</p>
+            <p className="text-xs text-muted-foreground">模型与 Key 由服务器管理员配置</p>
+          </div>
+        ) : messages.length === 0 ? (
+          <div className="flex flex-col items-center gap-2 py-10 text-center">
+            <Sparkles className="size-6 text-muted-foreground" />
+            <p className="text-sm font-medium">求职 AI 伙伴</p>
+            <p className="text-xs text-muted-foreground">总结项目 · 改简历 · 备面试</p>
+          </div>
+        ) : (
+          messages.map((message) => (
+            <div key={message.id} className={cn('flex flex-col', message.role === 'user' ? 'items-end' : 'items-start')}>
+              <div className={cn('max-w-[92%] rounded-lg px-2.5 py-2 text-xs', message.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-accent')}>
+                {message.role === 'assistant' ? <MarkdownContent content={message.content || (message.status === 'streaming' ? '正在思考…' : '（无内容）')} /> : <span className="whitespace-pre-wrap">{message.content}</span>}
+              </div>
+              {message.role === 'assistant' && message.status !== 'done' && message.status !== 'streaming' && (
+                <span className="mt-1 text-[10px] text-muted-foreground">
+                  {{ stopped: '已停止', error: '生成失败', truncated: '内容已截断', streaming: '', done: '' }[message.status]}
+                </span>
+              )}
+            </div>
+          ))
+        )}
+        {error && <p className="text-xs text-destructive">{error}</p>}
+      </div>
+
+      {settings && settings.budget.percent >= 80 && (
+        <p className="border-t px-3 py-1.5 text-[10px] text-amber-700">
+          今日模型估算费用 {settings.budget.totalCny} / {settings.budget.limitCny} 元{settings.budget.exhausted ? '，新发送已暂停' : ''}
+        </p>
+      )}
+      {contextSummary}
+      <div className="border-t p-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))]">
+        <div className="flex items-end gap-1.5">
+          <Textarea
+            className="min-h-9 flex-1 text-xs"
+            placeholder={settings?.budget.exhausted ? '今日模型额度已用完' : '输入问题…'}
+            rows={1}
+            value={input}
+            disabled={!settings?.enabled || !settings.configured || settings.budget.exhausted}
+            onChange={(event) => setInput(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.nativeEvent.isComposing) return
+              if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault()
+                void send()
+              }
+            }}
+          />
+          <Button size="icon-sm" disabled={!sending && !canSend} aria-label={sending ? '停止' : '发送'} onClick={() => void send()}>
+            {sending ? <Square /> : <SendHorizontal />}
+          </Button>
+        </div>
+      </div>
+    </>
+  )
 
   return (
-    <aside
-      className={cn(
-        'sticky top-0 hidden h-screen shrink-0 flex-col border-l bg-card transition-[width] duration-200 md:flex',
-        collapsed ? 'w-[30px]' : 'w-96',
-      )}
-    >
-      {collapsed ? (
-        /* 收起态：30px 竖条，居中竖排「AI 对话」，点击展开 */
-        <button
-          type="button"
-          aria-label="展开 AI 助手面板"
-          className="flex flex-1 cursor-pointer flex-col items-center justify-center gap-2 text-xs text-muted-foreground outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
-          onClick={() => setCollapsed(false)}
-        >
-          <span>AI</span>
-          <span>对</span>
-          <span>话</span>
-        </button>
-      ) : (
-        <>
-          {/* 头部：标题 + 模型下拉 + 收起图标 */}
-          <div className="flex h-14 shrink-0 items-center gap-1.5 border-b px-3">
-            <Sparkles className="size-4 shrink-0 text-primary" />
-            <span className="shrink-0 text-sm font-medium">AI 助手</span>
-            <Select
-              value={models.length === 0 ? GOTO_SETTINGS : selectedModel}
-              onValueChange={(v) => {
-                if (v === GOTO_SETTINGS) {
-                  navigate('/ai-settings')
-                } else {
-                  setSelectedModel(v as string)
-                }
-              }}
-            >
-              <SelectTrigger
-                size="sm"
-                className="min-w-0 flex-1 border-transparent bg-transparent px-1.5 text-xs shadow-none"
-              >
-                <SelectValue>
-                  {(v: string) => (v === GOTO_SETTINGS ? '未配置模型' : v)}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {models.length === 0 ? (
-                  <SelectItem value={GOTO_SETTINGS}>
-                    ＋ 前往「AI 对话管理」添加模型
-                  </SelectItem>
-                ) : (
-                  models.map((m) => (
-                    <SelectItem key={m} value={m}>
-                      {m}
-                    </SelectItem>
-                  ))
-                )}
-              </SelectContent>
-            </Select>
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              aria-label="收起 AI 助手面板"
-              onClick={() => setCollapsed(true)}
-            >
-              <ChevronRight className="size-4" />
-            </Button>
-          </div>
-
-          {/* 内容区：空状态 + 气泡样式示意（M5 直接复用） */}
-          <div className="flex-1 space-y-4 overflow-y-auto p-3">
-            <div className="flex flex-col items-center gap-2 py-8 text-center">
-              <Sparkles className="size-6 text-muted-foreground" strokeWidth={1.5} />
-              <p className="text-sm font-medium">求职 AI 伙伴</p>
-              <p className="text-xs text-muted-foreground">总结项目 · 改简历 · 备面试</p>
-            </div>
-            <div className="space-y-2 border-t pt-3">
-              <p className="text-[11px] text-muted-foreground">气泡样式示意</p>
-              <div className="flex justify-end">
-                <div className="max-w-[85%] rounded-xl border bg-white px-2.5 py-1.5 text-xs">
-                  帮我把「搭建指标体系」改成 60 秒口述版。
-                </div>
-              </div>
-              <div className="flex justify-start">
-                <div className="max-w-[85%] rounded-xl bg-accent px-2.5 py-1.5 text-xs text-foreground">
-                  好的，按「背景一句话 → 动作三步 → 结果数字」压缩…
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* 底部输入区：输入框与附件按钮可点，发送禁用 */}
-          <div className="border-t p-2.5">
-            <div className="flex items-end gap-1.5">
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="添加附件"
-                onClick={() => setHint('附件解析能力将于 M5 上线')}
-              >
-                <Paperclip className="size-4" />
-              </Button>
-              <Textarea
-                className="min-h-8 flex-1 text-xs"
-                placeholder="M5 接入后可用…"
-                rows={1}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-              />
-              <Button size="icon-sm" disabled aria-label="发送（M5 上线）">
-                <SendHorizontal className="size-3.5" />
-              </Button>
-            </div>
-            <p className="mt-1.5 text-[11px] text-muted-foreground">
-              {hint ?? 'AI 对话能力将于 M5 上线'}
-            </p>
-          </div>
-        </>
-      )}
-    </aside>
+    <>
+      <aside className={cn('sticky top-0 hidden h-screen shrink-0 flex-col border-l bg-card transition-[width] duration-200 md:flex', collapsed ? 'w-[30px]' : 'w-96')}>
+        {collapsed ? (
+          <button type="button" aria-label="展开 AI 助手面板" className="flex flex-1 cursor-pointer flex-col items-center justify-center gap-2 text-xs text-muted-foreground hover:bg-muted" onClick={() => setCollapsed(false)}>
+            <span>AI</span><span>对</span><span>话</span>
+          </button>
+        ) : panel(false)}
+      </aside>
+      <Button className="fixed right-4 bottom-4 z-30 md:hidden" size="icon" aria-label="打开 AI 助手" onClick={() => setMobileOpen(true)}>
+        <Sparkles />
+      </Button>
+      {mobileOpen && <div className="fixed inset-0 z-50 flex flex-col bg-card md:hidden">{panel(true)}</div>}
+      <ContextSelector open={contextOpen} selection={selection} startPreview={contextPreview} onCancel={() => { setContextOpen(false); setContextPreview(false) }} onApply={applyContext} />
+    </>
   )
 }

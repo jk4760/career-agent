@@ -98,7 +98,7 @@ export async function updateConversationContext(conversationId: string, input: u
 
 export async function estimateConversationContext(input: unknown) {
   const selection = normalizeContextSelection(input, await defaultContextSelection())
-  return assembleContext(selection)
+  return assembleContext(selection, false)
 }
 
 export function stopChat(messageId: string): boolean {
