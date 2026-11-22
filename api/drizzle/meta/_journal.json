@@ -50,6 +50,13 @@
       "when": 1795342929949,
       "tag": "0006_massive_hulk",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1795343825298,
+      "tag": "0007_glossy_mister_sinister",
+      "breakpoints": true
     }
   ]
 }

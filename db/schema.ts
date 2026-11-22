@@ -160,3 +160,31 @@ export const modelBudgetAlerts = pgTable('model_budget_alerts', {
   threshold: integer('threshold').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [unique('model_budget_alerts_date_threshold_key').on(t.budgetDate, t.threshold)])
+
+export const conversations = pgTable('conversations', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  provider: text('provider').notNull(),
+  model: text('model').notNull(),
+  contextSelection: jsonb('context_selection').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+export const messages = pgTable(
+  'messages',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    conversationId: uuid('conversation_id').notNull().references(() => conversations.id),
+    role: text('role').notNull(),
+    content: text('content').notNull(),
+    status: text('status').notNull(),
+    clientRequestId: text('client_request_id').unique(),
+    contextSnapshot: jsonb('context_snapshot'),
+    usageRequestId: uuid('usage_request_id'),
+    providerMessage: jsonb('provider_message'),
+    errorCode: text('error_code'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+  },
+  (t) => [index('idx_messages_conversation_created').on(t.conversationId, t.createdAt)],
+)

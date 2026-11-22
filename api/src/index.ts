@@ -5,6 +5,7 @@ import { migrate } from 'drizzle-orm/postgres-js/migrator'
 import { Hono } from 'hono'
 import { db } from './db'
 import { attachmentsRoute } from './routes/attachments'
+import { aiRoute } from './routes/ai'
 import { feishuRoute } from './feishu/callback'
 import { internalRoute } from './routes/internal'
 import { jobsRoute } from './routes/jobs'
@@ -27,6 +28,7 @@ app.route('/api/materials', attachmentsRoute)
 app.route('/api/facets', facetsRoute)
 app.route('/api/questions', questionsRoute)
 app.route('/api/preferences', preferencesRoute)
+app.route('/api/ai', aiRoute)
 
 // M4 内网接口：不挂 /api 前缀，nginx 不转发，仅 compose 内网（collector / ops 脚本）可达
 app.route('/internal', internalRoute)
