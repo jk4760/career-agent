@@ -4,12 +4,20 @@
 import { desc, eq, sql } from 'drizzle-orm'
 import { jobs } from '../../../db/schema'
 import { db } from '../db'
+import {
+  markModelCallRunning,
+  reserveModelCall,
+  settleModelCall,
+  usageFromOpenAI,
+} from '../ai/budget'
+import { estimateTokens } from '../ai/pricing'
 import type { Prefs } from '../scoring'
 import { PROMPT_VERSION, systemPrompt, userPrompt } from './scorePrompt'
 
 const BASE_URL = process.env.MOONSHOT_BASE_URL || 'https://api.moonshot.cn/v1'
-const MODEL = process.env.MOONSHOT_MODEL || 'kimi-k3.1-pro' // 输入 ¥13/输出 ¥68 per M，比 k3 便宜 ~40%
+const MODEL = process.env.MOONSHOT_MODEL || 'kimi-k3.1-pro'
 const REQUEST_TIMEOUT_MS = 45_000
+const MAX_COMPLETION_TOKENS = 1024
 const PACE_MS = 1000 // 串行低频发评；该账号 RPM 上限低（429 由重试兜底）
 const MAX_PER_RUN = 60 // 单次评分硬上限（修复批项 1.2），超出顺延不得静默扩大
 
@@ -72,7 +80,16 @@ export async function scoreJobWithLLM(
   let lastError = 'unknown'
   for (let attempt = 0; attempt < backoffMs.length; attempt++) {
     if (attempt > 0) await new Promise((r) => setTimeout(r, backoffMs[attempt]))
-    const outcome = await callLLM(job, prefs, apiKey)
+    let outcome: CallOutcome
+    try {
+      outcome = await callLLM(job, prefs, apiKey)
+    } catch (error) {
+      const code = error instanceof Error && 'code' in error ? String(error.code) : 'UPSTREAM_ERROR'
+      if (code === 'BUDGET_EXCEEDED' || code === 'BUDGET_CONFIG_MISSING') {
+        return { result: null, error: code }
+      }
+      throw error
+    }
     if (outcome.kind === 'retry') {
       lastError = 'HTTP 429 限流（重试耗尽）'
       continue
@@ -93,6 +110,20 @@ async function callLLM(
   prefs: Prefs,
   apiKey: string,
 ): Promise<CallOutcome> {
+  const messages = [
+    { role: 'system', content: systemPrompt() },
+    { role: 'user', content: userPrompt(job, prefs) },
+  ]
+  const reservation = await reserveModelCall({
+    purpose: 'job_scoring',
+    provider: 'moonshot',
+    model: MODEL,
+    estimatedInputTokens: estimateTokens(JSON.stringify(messages)),
+    maxCompletionTokens: MAX_COMPLETION_TOKENS,
+    businessId: job.id,
+  })
+  await markModelCallRunning(reservation.requestId)
+  let settled = false
   try {
     const resp = await fetch(`${BASE_URL}/chat/completions`, {
       method: 'POST',
@@ -102,23 +133,30 @@ async function callLLM(
       },
       body: JSON.stringify({
         model: MODEL,
-        reasoning_effort: 'low', // 岗位评分是轻量判断任务，压低推理成本
-        // 注意：k3 系仅允许 temperature=1（2026-11 实测 400 拒绝其他值），
-        // 故不传 temperature；压抖动依赖锚定 rubric + json_object 结构化输出 + 校准示例
+        reasoning_effort: 'low',
+        max_completion_tokens: MAX_COMPLETION_TOKENS,
         response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: systemPrompt() },
-          { role: 'user', content: userPrompt(job, prefs) },
-        ],
+        messages,
       }),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     })
+    const bodyText = await resp.text()
+    let data: { choices?: { message?: { content?: string } }[]; usage?: unknown }
+    try {
+      data = JSON.parse(bodyText) as typeof data
+    } catch {
+      data = {}
+    }
+    await settleModelCall({
+      requestId: reservation.requestId,
+      usage: usageFromOpenAI(data),
+      failed: !resp.ok,
+      errorCode: resp.ok ? undefined : `HTTP_${resp.status}`,
+    })
+    settled = true
     if (resp.status === 429) return { kind: 'retry' }
     if (!resp.ok) {
-      return { kind: 'fail', error: `HTTP ${resp.status}: ${(await resp.text()).slice(0, 200)}` }
-    }
-    const data = (await resp.json()) as {
-      choices?: { message?: { content?: string } }[]
+      return { kind: 'fail', error: `HTTP ${resp.status}: ${bodyText.slice(0, 200)}` }
     }
     const content = data.choices?.[0]?.message?.content ?? ''
     const parsed = JSON.parse(content) as { score?: unknown; reasons?: unknown }
@@ -135,6 +173,14 @@ async function callLLM(
         : ''
     return { kind: 'ok', result: { score: Math.round(score), reasons, highlight } }
   } catch (e) {
+    if (!settled) {
+      await settleModelCall({
+        requestId: reservation.requestId,
+        usage: null,
+        failed: true,
+        errorCode: 'UPSTREAM_ERROR',
+      })
+    }
     return { kind: 'fail', error: `调用异常: ${e instanceof Error ? e.message : e}` }
   }
 }
@@ -244,6 +290,10 @@ export async function runScoring(
       state.done += 1
       if (state.done % 20 === 0) {
         console.log(`[llm] 评分进度 ${state.done}/${state.total}（成功 ${state.scored} 失败 ${state.failed}）`)
+      }
+      if (state.lastError === 'BUDGET_EXCEEDED' || state.lastError === 'BUDGET_CONFIG_MISSING') {
+        console.log(`[llm] ${state.lastError}：停止本轮新评分，未评分岗位留待后续运行`)
+        break
       }
       await new Promise((r) => setTimeout(r, PACE_MS))
     }
