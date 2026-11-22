@@ -136,3 +136,20 @@ test('401、429、5xx 均不自动重试计费请求', async () => {
   }
   assert.equal(calls, 3)
 })
+
+test('历史消息只保留最近 6 轮', async () => {
+  const { createConversation, historyForRequest } = await import('./chat')
+  const conversation = await createConversation()
+  const now = Date.now()
+  await db.insert(messages).values(Array.from({ length: 14 }, (_, index) => ({
+    conversationId: conversation.id,
+    role: index % 2 === 0 ? 'user' : 'assistant',
+    content: `虚构消息 ${index}`,
+    status: 'done',
+    createdAt: new Date(now + index * 1000),
+  })))
+  const history = await historyForRequest(conversation.id)
+  assert.equal(history.length, 12)
+  assert.equal(history[0].content, '虚构消息 2')
+  assert.equal(history[11].content, '虚构消息 13')
+})

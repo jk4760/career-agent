@@ -107,7 +107,7 @@ export function stopChat(messageId: string): boolean {
   return true
 }
 
-async function historyForRequest(conversationId: string): Promise<ProviderMessage[]> {
+export async function historyForRequest(conversationId: string): Promise<ProviderMessage[]> {
   const rows = await db
     .select()
     .from(messages)
