@@ -5,6 +5,7 @@ import {
   index,
   integer,
   jsonb,
+  numeric,
   pgTable,
   text,
   timestamp,
@@ -118,3 +119,44 @@ export const pushLog = pgTable('push_log', {
   pushedAt: timestamp('pushed_at', { withTimezone: true }).notNull().defaultNow(),
   userReply: text('user_reply'),
 })
+
+export const modelUsageRequests = pgTable(
+  'model_usage_requests',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    requestId: uuid('request_id').notNull().unique(),
+    budgetDate: text('budget_date').notNull(),
+    purpose: text('purpose').notNull(),
+    provider: text('provider').notNull(),
+    model: text('model').notNull(),
+    status: text('status').notNull(),
+    estimatedInputTokens: integer('estimated_input_tokens').notNull(),
+    maxCompletionTokens: integer('max_completion_tokens').notNull(),
+    reservedAmount: numeric('reserved_amount', { precision: 14, scale: 6 }).notNull(),
+    inputTokens: integer('input_tokens'),
+    cacheHitTokens: integer('cache_hit_tokens'),
+    cacheWriteTokens: integer('cache_write_tokens'),
+    cacheTtl: text('cache_ttl'),
+    outputTokens: integer('output_tokens'),
+    actualAmount: numeric('actual_amount', { precision: 14, scale: 6 }),
+    businessId: text('business_id'),
+    errorCode: text('error_code'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    startedAt: timestamp('started_at', { withTimezone: true }),
+    finishedAt: timestamp('finished_at', { withTimezone: true }),
+  },
+  (t) => [index('idx_model_usage_budget_date').on(t.budgetDate, t.status)],
+)
+
+export const modelBudgetDays = pgTable('model_budget_days', {
+  budgetDate: text('budget_date').primaryKey(),
+  totalAmount: numeric('total_amount', { precision: 14, scale: 6 }).notNull().default('0'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+export const modelBudgetAlerts = pgTable('model_budget_alerts', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  budgetDate: text('budget_date').notNull(),
+  threshold: integer('threshold').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [unique('model_budget_alerts_date_threshold_key').on(t.budgetDate, t.threshold)])

@@ -25,6 +25,7 @@ dist-ssr
 
 # Environment
 .env*
+!.env.example
 
 # Local backup dumps
 backups/
