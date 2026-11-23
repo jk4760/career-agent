@@ -20,7 +20,7 @@ import {
   streamAIChat,
 } from '@/lib/aiApi'
 import { useRepository } from '@/lib/repository'
-import { cn } from '@/lib/utils'
+import { cn, uuid } from '@/lib/utils'
 import type { AIContextSelection, AIConversation, AIMessage, AISettings } from '@/types'
 
 const CURRENT_CONVERSATION_KEY = 'nextcareer.current-conversation.v1'
@@ -96,7 +96,7 @@ export function AssistantPanel() {
     setSending(true)
     setError(null)
     setInput('')
-    const clientRequestId = crypto.randomUUID()
+    const clientRequestId = uuid()
     const userId = `local-user-${clientRequestId}`
     const localAssistantId = `local-assistant-${clientRequestId}`
     setMessages((current) => [
