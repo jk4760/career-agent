@@ -33,9 +33,12 @@ export default function JobsPage() {
   const [reportId, setReportId] = useState<string | null>(null)
   const [basisSignal, setBasisSignal] = useState(0)
   const returnScroll = useRef(0)
+  const requestSequence = useRef(0)
 
   const reload = useCallback(async () => {
+    const requestId = ++requestSequence.current
     const list = await repo.listJobs(tab === 'all' ? undefined : tab, sort)
+    if (requestId !== requestSequence.current) return
     // 「全部」tab 排除「不合适」（纯前端过滤；反馈事件保留，「不合适」tab 完整不变）
     setJobs(tab === 'all' ? list.filter((j) => j.status !== 'pass') : list)
     setLoaded(true)
