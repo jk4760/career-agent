@@ -152,7 +152,7 @@ ops/daily.sh status             # 只读巡检：采集/评分/推送状态
 
 ## M5 AI、预算与私有访问
 
-- 模型用量统一经过 `api/src/ai/budget.ts`：岗位评分的每次请求（含 429 重试）、AI 对话和报告均先预留，完成后按分类 usage 结算；无 usage 时保守结算。金额使用 Postgres numeric + 整数微元计算，不用浮点累计。
+- 模型用量统一经过 `api/src/ai/budget.ts`：岗位评分、AI 对话和报告均先预留，完成后按分类 usage 结算；无 usage 时保守结算。岗位评分上游失败不自动重试；报告明确未尝试上游时释放预留。金额使用 Postgres numeric + 整数微元计算，不用浮点累计。
 - 每日口径为 `Asia/Shanghai` 自然日，默认 `AI_DAILY_BUDGET_CNY=2`；`AI_BUDGET_ENFORCE=true` 才启用硬闸门。启用前必须为实际模型配置完整的输入、输出、缓存命中、5min/1h 缓存写入价格，缺价明确拒绝。价格见 `.env.example`，最终以控制台和账单为准。
 - 调用前 token 是估算而非服务商精确账单：ASCII 字符按约 1/3 token、其他字符按 1 token，并加固定请求开销；预留覆盖普通输入、可能的缓存写入和最大 completion tokens。页面费用不是服务商最终账单。
 - 对话使用 SSE、`reasoning_effort=low`、`max_completion_tokens=2000`，停止/断连会 abort 上游；报告使用严格 JSON Schema、4000 上限，每日最多 3 次。所有自动化测试使用 fake provider 和虚构数据。
