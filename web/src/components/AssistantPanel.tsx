@@ -226,8 +226,12 @@ export function AssistantPanel() {
         <Sparkles className="size-4 shrink-0 text-primary" />
         <span className="shrink-0 text-sm font-medium">AI 助手</span>
         <Select value={currentId} onValueChange={(value) => void openConversation(value as string)}>
-          <SelectTrigger size="sm" className="min-w-0 flex-1 border-transparent bg-transparent px-1.5 text-xs shadow-none">
-            <SelectValue>{currentId ? undefined : settings?.enabled ? '新对话' : '未配置模型'}</SelectValue>
+          <SelectTrigger
+            size="sm"
+            className="min-w-0 flex-1 border-transparent bg-transparent px-1.5 text-xs shadow-none"
+            aria-label={`当前模型 ${settings?.model ?? '未配置'}；点击切换会话`}
+          >
+            <SelectValue>{() => settings?.enabled ? settings.model : '未配置模型'}</SelectValue>
           </SelectTrigger>
           <SelectContent>
             {conversations.map((conversation) => (
