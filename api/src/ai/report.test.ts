@@ -213,3 +213,93 @@ test('生成期间修改依据，完成后立即显示依据已变化', async ()
   await waitFor(running.report.id, 'done')
   assert.equal((await reportState()).stale, true)
 })
+
+test('报告实际 Prompt 只使用任务创建时冻结的 A 输入', async () => {
+  await db.update(schema.preferences).set({
+    backgroundText: '虚构经历：负责一个虚构项目，指标提升 10%。\nRESUME_A_ONLY',
+    updatedAt: new Date(),
+  })
+  await db.update(schema.jobs).set({ description: 'JOB_A_ONLY' }).where(eq(schema.jobs.id, JOB_A))
+  await db.update(schema.materials).set({ content: 'MATERIAL_A_ONLY', updatedAt: new Date() }).where(eq(schema.materials.id, MATERIAL_ID))
+
+  let releaseUpstream!: () => void
+  const upstreamGate = new Promise<void>((resolve) => { releaseUpstream = resolve })
+  let calls = 0
+  let actualPrompt: { current_sources: { sourceId: string; content: string }[] }
+  const responseReport = fakeReport()
+  responseReport.directions[0].evidence.push({ text: 'RESUME_B_ONLY', source_type: 'resume', source_id: PREF_ID })
+  globalThis.fetch = async (_input, init) => {
+    calls += 1
+    const body = JSON.parse(String(init?.body))
+    actualPrompt = JSON.parse(body.messages[1].content)
+    await upstreamGate
+    return upstream(responseReport)
+  }
+
+  const created = await generateReport({ selection: {
+    includePreferences: false, resumeId: PREF_ID, materialIds: [MATERIAL_ID], jobIds: [],
+  } })
+  await db.update(schema.preferences).set({ backgroundText: 'RESUME_B_ONLY', updatedAt: new Date() })
+  await db.update(schema.jobs).set({ description: 'JOB_B_ONLY' }).where(eq(schema.jobs.id, JOB_A))
+  await db.update(schema.materials).set({ content: 'MATERIAL_B_ONLY', updatedAt: new Date() }).where(eq(schema.materials.id, MATERIAL_ID))
+  releaseUpstream()
+  const done = await waitFor(created.report.id, 'done')
+
+  const serializedPrompt = JSON.stringify(actualPrompt!)
+  assert.ok(serializedPrompt.includes('RESUME_A_ONLY'))
+  assert.ok(serializedPrompt.includes('JOB_A_ONLY'))
+  assert.ok(serializedPrompt.includes('MATERIAL_A_ONLY'))
+  assert.ok(!serializedPrompt.includes('RESUME_B_ONLY'))
+  assert.ok(!serializedPrompt.includes('JOB_B_ONLY'))
+  assert.ok(!serializedPrompt.includes('MATERIAL_B_ONLY'))
+  assert.equal(done.inputHash, created.report.inputHash)
+  const history = await reportSnapshots(created.report.id)
+  const snapshotText = JSON.stringify(history?.snapshots)
+  assert.ok(snapshotText.includes('RESUME_A_ONLY'))
+  assert.ok(snapshotText.includes('JOB_A_ONLY'))
+  assert.ok(snapshotText.includes('MATERIAL_A_ONLY'))
+  assert.ok(!snapshotText.includes('_B_ONLY'))
+  assert.equal((await reportState()).stale, true)
+  const evidences = (done.report as ReturnType<typeof fakeReport>).directions[0].evidence
+  assert.deepEqual(evidences.map((item) => item.text), ['指标提升 10%'])
+  assert.equal(calls, 1)
+})
+
+test('新报告保存完整 JD 快照，Prompt 压缩与历史读取不依赖当前岗位', async () => {
+  const { hashContent } = await import('./context')
+  const endMarker = 'FICTIONAL_JD_END_AFTER_1200'
+  const fullDescription = `${'虚'.repeat(1300)}${endMarker}`
+  await db.update(schema.jobs).set({ description: fullDescription }).where(eq(schema.jobs.id, JOB_A))
+  const [originalJob] = await db.select().from(schema.jobs).where(eq(schema.jobs.id, JOB_A))
+  let calls = 0
+  let promptJob: { content: string } | undefined
+  globalThis.fetch = async (_input, init) => {
+    calls += 1
+    const body = JSON.parse(String(init?.body))
+    const prompt = JSON.parse(body.messages[1].content)
+    promptJob = prompt.current_sources.find((source: { sourceId: string }) => source.sourceId === JOB_A)
+    return upstream(fakeReport())
+  }
+
+  const created = await generateReport()
+  await waitFor(created.report.id, 'done')
+  const history = await reportSnapshots(created.report.id)
+  const snapshot = history?.snapshots.find((item) => item.sourceId === JOB_A)
+  assert.ok(snapshot)
+  assert.ok(snapshot.content.endsWith(endMarker))
+  assert.equal(snapshot.sourceId, JOB_A)
+  assert.equal(snapshot.version, originalJob.collectedAt.toISOString())
+  assert.equal(snapshot.hash, hashContent(snapshot.content))
+  assert.ok(promptJob)
+  assert.ok(promptJob.content.length < snapshot.content.length)
+  assert.ok(!promptJob.content.includes(endMarker))
+  assert.ok(promptJob.content.includes('虚'))
+
+  await db.update(schema.jobs).set({ description: 'CURRENT_JOB_B_ONLY' }).where(eq(schema.jobs.id, JOB_A))
+  const historicalAfterEdit = await reportSnapshots(created.report.id)
+  const unchanged = historicalAfterEdit?.snapshots.find((item) => item.sourceId === JOB_A)
+  assert.equal(unchanged?.content, snapshot.content)
+  assert.equal(unchanged?.hash, snapshot.hash)
+  assert.equal((await reportState()).stale, true)
+  assert.equal(calls, 1)
+})

@@ -117,19 +117,19 @@ async function collectSources(selection: ContextSelection): Promise<SourceRecord
   )
   const interested = await activeInterestedJobs()
   for (const job of interested) {
-    const full = `${job.company} · ${job.title}\n${job.description ?? ''}`
+    const content = [
+      `${job.company} · ${job.title}`,
+      `地点：${job.location ?? '未知'}`,
+      `薪资：${job.salaryMin ?? '未知'}-${job.salaryMax ?? '未知'}`,
+      job.description ?? '',
+    ].join('\n')
     sources.push({
       sourceType: 'job',
       sourceId: job.id,
       name: `${job.company} · ${job.title}`,
       version: job.collectedAt.toISOString(),
-      hash: hashContent(full),
-      content: [
-        `${job.company} · ${job.title}`,
-        `地点：${job.location ?? '未知'}`,
-        `薪资：${job.salaryMin ?? '未知'}-${job.salaryMax ?? '未知'}`,
-        (job.description ?? '').slice(0, 1200),
-      ].join('\n'),
+      hash: hashContent(content),
+      content,
     })
   }
   return sources
@@ -164,6 +164,13 @@ function jobDiff(current: SourceRecord[], previous: SourceRecord[]) {
   }
 }
 
+function snapshotName(row: typeof reportSourceSnapshots.$inferSelect): string {
+  if (row.sourceType === 'resume') return '当前简历（个人背景）'
+  if (row.sourceType === 'job') return row.content.split('\n')[0]
+  const title = row.content.split('\n').find((line) => line.startsWith('标题：'))
+  return title?.slice(3) ?? ''
+}
+
 async function snapshotsForReport(reportId: string): Promise<SourceRecord[]> {
   const rows = await db
     .select()
@@ -172,11 +179,22 @@ async function snapshotsForReport(reportId: string): Promise<SourceRecord[]> {
   return rows.map((row) => ({
     sourceType: row.sourceType as SourceRecord['sourceType'],
     sourceId: row.sourceId,
-    name: '',
+    name: snapshotName(row),
     version: row.version,
     hash: row.hash,
     content: row.content,
   }))
+}
+
+function promptSources(sources: SourceRecord[]): SourceRecord[] {
+  return sources.map((source) => {
+    if (source.sourceType !== 'job') return source
+    const lines = source.content.split('\n')
+    return {
+      ...source,
+      content: [...lines.slice(0, 3), lines.slice(3).join('\n').slice(0, 1200)].join('\n'),
+    }
+  })
 }
 
 async function currentReport() {
@@ -309,8 +327,7 @@ async function runReport(id: string) {
   let status = 'done'
   let errorCode: string | null = null
   try {
-    const selection = task.selection as ContextSelection
-    const sources = await collectSources(selection)
+    const sources = await snapshotsForReport(id)
     const previous = task.generationMode === 'rebuild' ? [] : await db
       .select()
       .from(resumeStrategyReports)
@@ -321,7 +338,7 @@ async function runReport(id: string) {
     const diff = jobDiff(sources, previousSources)
     const prompt = {
       previous_report: previous[0]?.report ?? null,
-      current_sources: sources,
+      current_sources: promptSources(sources),
       added_or_changed_job_ids: [...diff.added_job_ids, ...diff.changed_job_ids],
       removed_job_ids: diff.removed_job_ids,
     }
