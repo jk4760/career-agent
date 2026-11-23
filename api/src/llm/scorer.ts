@@ -1,6 +1,6 @@
 // M4 施工项 3：LLM 评分执行器（Moonshot/Kimi API；失败降级留空，永不阻塞采集与推送）
 // M4 修复批（2026-11-16）：预算闸门（默认只补未评分 + 单次硬上限 60）、
-// 干跑分解日志、429 退避、per-job 失败明细、k3.1-pro + reasoning_effort=low 降本
+// 干跑分解日志、per-job 失败明细、k3.1-pro + reasoning_effort=low 降本
 import { desc, eq, sql } from 'drizzle-orm'
 import { jobs } from '../../../db/schema'
 import { db } from '../db'
@@ -18,7 +18,7 @@ const BASE_URL = process.env.MOONSHOT_BASE_URL || 'https://api.moonshot.cn/v1'
 const MODEL = process.env.MOONSHOT_MODEL || 'kimi-k3.1-pro'
 const REQUEST_TIMEOUT_MS = 45_000
 const MAX_COMPLETION_TOKENS = 1024
-const PACE_MS = 1000 // 串行低频发评；该账号 RPM 上限低（429 由重试兜底）
+const PACE_MS = 1000 // 串行低频发评；失败留待后续独立任务处理
 const MAX_PER_RUN = 60 // 单次评分硬上限（修复批项 1.2），超出顺延不得静默扩大
 
 export interface LlmResult {
@@ -75,34 +75,21 @@ export async function scoreJobWithLLM(
   if (!apiKey) {
     return { result: null, error: 'MOONSHOT_API_KEY 未配置（降级规则分）' }
   }
-  // 429 限流重试（该账号 RPM 上限低，实测错误提示 1s 后可重试）；其余 4xx/5xx 不重试
-  const backoffMs = [0, 2000, 4000, 8000]
-  let lastError = 'unknown'
-  for (let attempt = 0; attempt < backoffMs.length; attempt++) {
-    if (attempt > 0) await new Promise((r) => setTimeout(r, backoffMs[attempt]))
-    let outcome: CallOutcome
-    try {
-      outcome = await callLLM(job, prefs, apiKey)
-    } catch (error) {
-      const code = error instanceof Error && 'code' in error ? String(error.code) : 'UPSTREAM_ERROR'
-      if (code === 'BUDGET_EXCEEDED' || code === 'BUDGET_CONFIG_MISSING') {
-        return { result: null, error: code }
-      }
-      throw error
-    }
-    if (outcome.kind === 'retry') {
-      lastError = 'HTTP 429 限流（重试耗尽）'
-      continue
-    }
+  try {
+    const outcome = await callLLM(job, prefs, apiKey)
     if (outcome.kind === 'fail') return { result: null, error: outcome.error }
     return { result: outcome.result, error: null }
+  } catch (error) {
+    const code = error instanceof Error && 'code' in error ? String(error.code) : 'UPSTREAM_ERROR'
+    if (code === 'BUDGET_EXCEEDED' || code === 'BUDGET_CONFIG_MISSING') {
+      return { result: null, error: code }
+    }
+    throw error
   }
-  return { result: null, error: lastError }
 }
 
 type CallOutcome =
   | { kind: 'ok'; result: LlmResult }
-  | { kind: 'retry' }
   | { kind: 'fail'; error: string }
 
 async function callLLM(
@@ -154,7 +141,6 @@ async function callLLM(
       errorCode: resp.ok ? undefined : `HTTP_${resp.status}`,
     })
     settled = true
-    if (resp.status === 429) return { kind: 'retry' }
     if (!resp.ok) {
       return { kind: 'fail', error: `HTTP ${resp.status}: ${bodyText.slice(0, 200)}` }
     }
