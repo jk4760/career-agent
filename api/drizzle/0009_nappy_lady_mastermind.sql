@@ -1,0 +1,1 @@
+ALTER TABLE "resume_strategy_reports" ADD COLUMN "generation_mode" text DEFAULT 'update' NOT NULL;

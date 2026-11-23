@@ -158,3 +158,58 @@ test('并发相同输入复用进行中任务，不重复调用', async () => {
   await waitFor(first.report.id, 'done')
   assert.equal(calls, 1)
 })
+
+test('取消会中断上游并保留上一份成功报告', async () => {
+  globalThis.fetch = async () => upstream(fakeReport())
+  const initial = await generateReport()
+  await waitFor(initial.report.id, 'done')
+  await db.insert(schema.jobs).values({
+    id: JOB_B, title: '虚构岗位 B', company: '虚构公司', source: 'fake', sourceUrl: 'https://example.com/b', description: '虚构要求 B', dedupKey: 'fake-b',
+  })
+  await db.insert(schema.feedbackEvents).values({ jobId: JOB_B, action: 'interested' })
+  globalThis.fetch = async (_input, init) => {
+    if (init?.signal?.aborted) throw new Error('aborted')
+    return new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(new Error('aborted')))
+    })
+  }
+  const running = await generateReport()
+  const { cancelReport } = await import('./report')
+  assert.equal(cancelReport(running.report.id), true)
+  await waitFor(running.report.id, 'canceled')
+  assert.equal((await reportState()).current.id, initial.report.id)
+})
+
+test('完整重建只调用一次 fake upstream 且不携带上一版报告', async () => {
+  globalThis.fetch = async () => upstream(fakeReport())
+  const initial = await generateReport()
+  await waitFor(initial.report.id, 'done')
+  globalThis.fetch = async (_input, init) => {
+    const body = JSON.parse(String(init?.body))
+    const prompt = JSON.parse(body.messages[1].content)
+    assert.equal(prompt.previous_report, null)
+    return upstream(fakeReport())
+  }
+  const rebuilt = await generateReport({ mode: 'rebuild' })
+  const done = await waitFor(rebuilt.report.id, 'done')
+  assert.equal(done.generationMode, 'rebuild')
+  assert.equal(done.version, initial.report.version + 1)
+})
+
+test('生成期间修改依据，完成后立即显示依据已变化', async () => {
+  globalThis.fetch = async () => upstream(fakeReport())
+  const initial = await generateReport()
+  await waitFor(initial.report.id, 'done')
+  await db.insert(schema.jobs).values({
+    id: JOB_B, title: '虚构岗位 B', company: '虚构公司', source: 'fake', sourceUrl: 'https://example.com/b', description: '虚构要求 B', dedupKey: 'fake-b',
+  })
+  await db.insert(schema.feedbackEvents).values({ jobId: JOB_B, action: 'interested' })
+  globalThis.fetch = async () => {
+    await new Promise((resolve) => setTimeout(resolve, 60))
+    return upstream(fakeReport())
+  }
+  const running = await generateReport()
+  await db.update(schema.preferences).set({ backgroundText: '虚构背景的新版本', updatedAt: new Date() })
+  await waitFor(running.report.id, 'done')
+  assert.equal((await reportState()).stale, true)
+})

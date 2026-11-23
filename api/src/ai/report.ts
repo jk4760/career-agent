@@ -297,10 +297,13 @@ function validateReport(value: unknown, sources: SourceRecord[]): ResumeStrategy
 }
 
 async function runReport(id: string) {
-  const [task] = await db.select().from(resumeStrategyReports).where(eq(resumeStrategyReports.id, id))
-  if (!task) return
   const controller = new AbortController()
   activeReports.set(id, controller)
+  const [task] = await db.select().from(resumeStrategyReports).where(eq(resumeStrategyReports.id, id))
+  if (!task) {
+    activeReports.delete(id)
+    return
+  }
   let reservationId: string | null = null
   let usage: ReturnType<typeof usageFromOpenAI> = null
   let status = 'done'
@@ -308,7 +311,7 @@ async function runReport(id: string) {
   try {
     const selection = task.selection as ContextSelection
     const sources = await collectSources(selection)
-    const previous = await db
+    const previous = task.generationMode === 'rebuild' ? [] : await db
       .select()
       .from(resumeStrategyReports)
       .where(and(eq(resumeStrategyReports.status, 'done'), sql`${resumeStrategyReports.version} < ${task.version}`))
@@ -382,8 +385,9 @@ async function runReport(id: string) {
   }
 }
 
-async function generateReportAtomic(input?: { selection?: unknown }) {
+async function generateReportAtomic(input?: { selection?: unknown; mode?: 'initial' | 'update' | 'rebuild' }) {
   if (!reportEnabled()) throw new Error('FEATURE_DISABLED')
+  const mode = input?.mode ?? 'update'
   const selection = input?.selection
     ? normalizeContextSelection(input.selection, await selectionForReports())
     : await selectionForReports()
@@ -395,7 +399,7 @@ async function generateReportAtomic(input?: { selection?: unknown }) {
   if (!resume?.content.trim()) throw new Error('RESUME_REQUIRED')
   const hash = inputHash(selection, sources)
   const current = await currentReport()
-  if (current?.inputHash === hash) return { noChange: true, report: current }
+  if (mode !== 'rebuild' && current?.inputHash === hash) return { noChange: true, report: current }
   const [generating] = await db.select().from(resumeStrategyReports).where(eq(resumeStrategyReports.status, 'generating')).limit(1)
   if (generating) {
     if (generating.inputHash === hash) return { noChange: false, report: generating }
@@ -407,7 +411,7 @@ async function generateReportAtomic(input?: { selection?: unknown }) {
   const versions = await db.select({ version: resumeStrategyReports.version }).from(resumeStrategyReports)
   const version = Math.max(0, ...versions.map((item) => item.version)) + 1
   const [task] = await db.insert(resumeStrategyReports).values({
-    version, status: 'generating', inputHash: hash, selection,
+    version, status: 'generating', generationMode: mode, inputHash: hash, selection,
     sourceJobIds: interested.map((job) => job.sourceId),
     model: process.env.MOONSHOT_MODEL || 'kimi-k3.1-pro',
   }).returning()
@@ -421,7 +425,7 @@ async function generateReportAtomic(input?: { selection?: unknown }) {
 
 let reportGenerationQueue: Promise<void> = Promise.resolve()
 
-export function generateReport(input?: { selection?: unknown }) {
+export function generateReport(input?: { selection?: unknown; mode?: 'initial' | 'update' | 'rebuild' }) {
   const result = reportGenerationQueue.then(() => generateReportAtomic(input))
   reportGenerationQueue = result.then(
     () => undefined,

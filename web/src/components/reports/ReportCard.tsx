@@ -89,13 +89,13 @@ export function ReportCard({ refreshKey, basisSignal = 0, onOpenReport }: Props)
     }
   }
 
-  const generate = async () => {
+  const generate = async (mode: 'initial' | 'update' | 'rebuild' = 'update') => {
     if (!draft || saving) return
     setSaving(true)
     setError(null)
     try {
       await saveReportBasis(draft)
-      await generateResumeReport(draft)
+      await generateResumeReport(draft, mode)
       setDialogOpen(false)
       await load()
     } catch (err) {
@@ -240,7 +240,12 @@ export function ReportCard({ refreshKey, basisSignal = 0, onOpenReport }: Props)
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>取消</Button>
             <Button variant="outline" onClick={applyBasis} disabled={saving}>应用选择</Button>
-            <Button onClick={generate} disabled={saving || disabled || !state.resumeAvailable || state.interestedCount === 0}>
+            {current && (
+              <Button variant="outline" title="不携带上一版报告，按当前全部依据重新生成" onClick={() => void generate('rebuild')} disabled={saving || disabled || !state.resumeAvailable || state.interestedCount === 0}>
+                完整重建
+              </Button>
+            )}
+            <Button onClick={() => void generate()} disabled={saving || disabled || !state.resumeAvailable || state.interestedCount === 0}>
               {current ? '更新并生成' : '生成方向建议'}
             </Button>
           </DialogFooter>

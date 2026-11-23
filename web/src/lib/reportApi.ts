@@ -72,9 +72,12 @@ export function saveReportBasis(selection: AIContextSelection): Promise<ReportSt
   })
 }
 
-export function generateResumeReport(selection: AIContextSelection): Promise<{ noChange: boolean; report: ReportRow }> {
+export function generateResumeReport(
+  selection: AIContextSelection,
+  mode: 'initial' | 'update' | 'rebuild' = 'update',
+): Promise<{ noChange: boolean; report: ReportRow }> {
   return request('/reports/strategy/generate', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ selection }),
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ selection, mode }),
   })
 }
 

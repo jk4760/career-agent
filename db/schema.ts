@@ -201,6 +201,7 @@ export const resumeStrategyReports = pgTable(
     id: uuid('id').primaryKey().defaultRandom(),
     version: integer('version').notNull(),
     status: text('status').notNull(),
+    generationMode: text('generation_mode').notNull().default('update'),
     report: jsonb('report'),
     inputHash: text('input_hash').notNull(),
     selection: jsonb('selection').notNull(),
