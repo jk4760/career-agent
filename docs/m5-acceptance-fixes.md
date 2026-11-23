@@ -3,7 +3,7 @@
 日期：2026-11-23
 分支：`m5-acceptance-fixes`
 基线：`2a95cb7`
-状态：F1–F4 已修复并部署；F5 等待生产模型价格配置确认。用户 Web、飞书与硬预算真机验收尚未关闭。
+状态：F1–F5 已修复并部署，生产硬预算已开启；等待用户完成 Web、飞书与硬预算真机验收。
 
 ## 1. Commit 与 migration
 
@@ -13,6 +13,7 @@
 | `5eaafc0` | 报告从任务冻结快照生成，新岗位快照保存完整 JD，Prompt 保持有界压缩 |
 | `4387595` | 报告请求前失败释放预留，已尝试上游后才保守或按 usage 结算 |
 | `7bac542` | 修正本地隔离测试的外键清理顺序 |
+| `8041c62` | 验收修正交付文档 |
 
 本批没有新增或修改 migration，没有回填或重写历史快照。
 
@@ -24,7 +25,7 @@
 | F2 冻结输入 | `runReport` 再读当前岗位、简历、素材 | `runReport` 只读取当前 `taskId` 的快照；上一版仅用于差异。A→B 回归断言实际 Prompt 只含 A，B 证据被过滤，完成后 `stale=true`，历史仍为 A | 已部署 |
 | F3 请求前扣费 | Key 缺失发生在预留后，`finally` 统一保守结算 | Key 在预留前校验；预留后、fetch 前失败走 release；fetch 前置 `upstreamAttempted=true`，之后统一 settle。Key 缺失和本地请求前故障均零费用、零有效预留 | 已部署 |
 | F4 完整 JD 快照 | 岗位 `content` 只存前 1200 字 | 新快照保存公司、岗位、地点、薪资和完整 JD，`hash=SHA256(content)`；Prompt 仅从冻结全文压缩 JD 到 1200 字。1300 字加末尾唯一标记测试通过 | 已部署；旧截断快照保持原样 |
-| F5 生产硬预算 | `AI_BUDGET_ENFORCE=false`，实际模型五项价格未配置 | 已核对 Moonshot 国内 base URL、`kimi-k3.1-pro`、每日 2 元、`.env` 权限 600；标准版五项价格均为 missing，Highspeed 未启用 | 等待用户确认价格；未开启、未按 0 元放行测试 |
+| F5 生产硬预算 | `AI_BUDGET_ENFORCE=false`，实际模型五项价格未配置 | 按 [Moonshot 官方价格](https://platform.moonshot.cn/docs/pricing/chat)配置标准版输入 13、输出 68、缓存命中 1.30、5min 写入 13、1h 写入 26 元/MTok；未混用 Highspeed。生产模型、国内 base URL、每日 2 元与 `.env` 权限 600 均已核对 | `AI_BUDGET_ENFORCE=true`；当前估算 ¥0.444223 / ¥2，未耗尽 |
 
 ## 3. 预算状态机
 
@@ -70,13 +71,13 @@ generateReportAtomic
 
 ## 6. 部署与回滚
 
-- 生产部署内容：F1–F4，仅重建 `api`；Web、Nginx、Claw 和定时任务未改。
+- 生产部署内容：F1–F5；F1–F4 重建 `api` 镜像，F5 更新 Compose override 并仅重建 API 容器。Web、Nginx、Claw 和定时任务未改。
 - 数据库备份：`/opt/nextcareer/backups/nextcareer-pre-m5-acceptance-20261123-175645.sql`，权限 600，不包含 `.env`。
 - 回滚 API 镜像：`sha256:a3b7a90198be2799003faf54f7d732a4c3c3cb9ac24683790a6e568f602d943e`。
 - 部署后 API 镜像：`sha256:190dee7edc40743262e9aa26e4c2ec7b1600220d03801d0042a45253d3db164a`。
 - 报告版本 3 与 3 个既有会话可读。
 - 部署前后模型用量均为 5 条，最新时间未变化；本批真实模型调用为 0。
-- 当前硬预算仍为 `false`，等待价格配置确认。硬预算限制系统估算模型费用，不等于服务商最终账单。
+- `AI_BUDGET_ENFORCE=true`，当前估算用量 ¥0.444223 / ¥2，未耗尽。硬预算限制系统估算模型费用，不等于服务商最终账单。
 
 ## 7. 待用户验收
 

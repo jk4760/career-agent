@@ -2,7 +2,7 @@
 
 日期：2026-11-23
 分支：`m5-ai-fullstack`
-状态：生产已部署 migration `0004`–`0009`；AI 对话、简历报告、飞书报告按钮与摘要推送已开启；真实模型小额冒烟已执行；公网收敛已启用。F1–F4 验收修正已部署；硬预算仍关闭，生产模型价格待确认。详见 `docs/m5-acceptance-fixes.md`。
+状态：生产已部署 migration `0004`–`0009`；AI 对话、简历报告、飞书报告按钮与摘要推送已开启；真实模型小额冒烟已执行；公网收敛已启用。F1–F5 验收修正已部署，每日 2 元硬预算已开启；等待用户真机验收。详见 `docs/m5-acceptance-fixes.md`。
 
 ## 1. 开工审计结论
 
@@ -102,11 +102,11 @@
 
 生产当前状态：
 
-1. migration 已前滚至 `0009`，AI 对话、简历报告、飞书报告按钮与摘要推送均已开启；`AI_BUDGET_ENFORCE=false`。
+1. migration 已前滚至 `0009`，AI 对话、简历报告、飞书报告按钮与摘要推送均已开启；`AI_BUDGET_ENFORCE=true`，每日限额 ¥2。
 2. 真实模型对话和报告各执行过 1 次小额冒烟，合计估算 ¥0.444223；本修正批真实模型调用为 0。
 3. `web/Dockerfile` 默认使用 `web/nginx.private.conf`，Web 与普通 API 仅允许 loopback 和 Docker 网关，飞书回调保持公网。
 4. 私有配置、公网拒绝、隧道认证入口及飞书明文/加密 Challenge 均已实测，详见 `docs/m5-private-access.md`。
-5. F1–F4 修正仅重建 API 部署，部署前后用量台账均为 5 条且最新时间不变；备份、镜像与测试证据见 `docs/m5-acceptance-fixes.md`。
+5. F1–F5 修正仅重建 API 部署，部署前后用量台账均为 5 条且最新时间不变；备份、镜像与测试证据见 `docs/m5-acceptance-fixes.md`。
 
 回滚：
 
@@ -119,6 +119,6 @@
 
 1. 按 `docs/m5-private-access.md` 建立 SSH 隧道，通过 `http://localhost:8080` 和现有 Basic Auth 使用系统；公网旧 Web 深链返回 403 是预期行为。
 2. 完成 `docs/m5-acceptance-fixes.md` 所列 Web 与飞书真机回归。
-3. 确认生产 `kimi-k3.1-pro` 的五项实际价格配置；当前均为 missing，硬预算保持关闭，不能按 0 元放行。价格确认后再开启并记录脱敏状态。
+3. 已确认生产 `kimi-k3.1-pro` 五项官方标准版价格并开启硬预算；用户日常观察 80% 提示、100% 停止和每日最多一次告警，不为验收故意烧到上限。
 
 本报告不包含真实 Prompt、个人资料或密钥；真实冒烟只记录次数与估算费用，不记录生成内容。
