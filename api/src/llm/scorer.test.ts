@@ -27,6 +27,7 @@ before(async () => {
 beforeEach(async () => {
   await db.delete(schema.modelUsageRequests)
   await db.delete(schema.modelBudgetDays)
+  await db.delete(schema.feedbackEvents)
   await db.delete(schema.jobs)
   await db.insert(schema.jobs).values({
     id: JOB_ID,
