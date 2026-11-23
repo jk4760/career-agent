@@ -157,7 +157,7 @@ ops/daily.sh status             # 只读巡检：采集/评分/推送状态
 - 调用前 token 是估算而非服务商精确账单：ASCII 字符按约 1/3 token、其他字符按 1 token，并加固定请求开销；预留覆盖普通输入、可能的缓存写入和最大 completion tokens。页面费用不是服务商最终账单。
 - 对话使用 SSE、`reasoning_effort=low`、`max_completion_tokens=2000`，停止/断连会 abort 上游；报告使用严格 JSON Schema、4000 上限，每日最多 3 次。所有自动化测试使用 fake provider 和虚构数据。
 - 新功能 flag：`AI_CHAT_ENABLED`、`RESUME_STRATEGY_ENABLED`、`RESUME_STRATEGY_FEISHU_ACTION_ENABLED`、`RESUME_STRATEGY_FEISHU_PUSH_ENABLED`，默认均为 `false`。
-- 私有访问使用 SSH 隧道，见 `docs/m5-private-access.md`。用户确认隧道前不启用 `web/nginx.private.conf`；飞书回调继续公网放行。
+- 私有访问已启用：Web 与普通 API 使用 SSH 隧道，见 `docs/m5-private-access.md`；飞书回调继续公网放行。
 - 测试：`npm test --workspace api`；Web 另跑 `npm run build --workspace web`。交付与回滚说明见 `docs/m5-delivery.md`。
 
 ## 里程碑

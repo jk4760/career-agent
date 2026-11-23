@@ -12,7 +12,7 @@ RUN npm run build --workspace web
 FROM nginx:alpine
 # apache2-utils 提供 htpasswd（容器启动时从环境变量生成 Basic Auth 凭据）
 RUN apk add --no-cache apache2-utils
-COPY web/nginx.conf /etc/nginx/conf.d/default.conf
+COPY web/nginx.private.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/web/dist /usr/share/nginx/html
 COPY web/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
