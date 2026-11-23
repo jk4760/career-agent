@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { after, before, beforeEach, test } from 'node:test'
-import { desc, eq } from 'drizzle-orm'
+import { desc, eq, sql } from 'drizzle-orm'
 import { migrate } from 'drizzle-orm/postgres-js/migrator'
 
 const testUrl = new URL(process.env.DATABASE_URL!)
@@ -9,6 +9,9 @@ process.env.DATABASE_URL = testUrl.toString()
 process.env.MOONSHOT_API_KEY = 'fake-key'
 process.env.MOONSHOT_MODEL = 'fake-report'
 process.env.RESUME_STRATEGY_ENABLED = 'true'
+process.env.RESUME_STRATEGY_FEISHU_PUSH_ENABLED = 'false'
+process.env.FEISHU_ALERT_CHANNEL = 'webhook'
+process.env.FEISHU_WEBHOOK_URL = ''
 process.env.AI_BUDGET_ENFORCE = 'true'
 for (const name of ['INPUT', 'OUTPUT', 'CACHE_HIT', 'CACHE_WRITE_5M', 'CACHE_WRITE_1H']) {
   process.env[`AI_PRICE_FAKE_REPORT_${name}_CNY_PER_MTOK`] = '1'
@@ -24,6 +27,9 @@ const JOB_B = '00000000-0000-4000-8000-00000000a503'
 const MATERIAL_ID = '00000000-0000-4000-8000-00000000a504'
 
 async function reset() {
+  process.env.MOONSHOT_API_KEY = 'fake-key'
+  await db.execute(sql`DROP TRIGGER IF EXISTS fail_report_running ON model_usage_requests`)
+  await db.execute(sql`DROP FUNCTION IF EXISTS fail_report_running()`)
   await db.delete(schema.reportSourceSnapshots)
   await db.delete(schema.reportPushLog)
   await db.delete(schema.resumeStrategyReports)
@@ -302,4 +308,103 @@ test('新报告保存完整 JD 快照，Prompt 压缩与历史读取不依赖当
   assert.equal(unchanged?.hash, snapshot.hash)
   assert.equal((await reportState()).stale, true)
   assert.equal(calls, 1)
+})
+
+
+test('报告 Key 缺失未发请求，不预留也不增加已结算金额', async () => {
+  const { getBudgetStatus } = await import('./budget')
+  delete process.env.MOONSHOT_API_KEY
+  let calls = 0
+  globalThis.fetch = async () => {
+    calls += 1
+    throw new Error('不应调用上游')
+  }
+  const created = await generateReport()
+  const failed = await waitFor(created.report.id, 'error')
+  assert.equal(failed.errorCode, 'MODEL_NOT_CONFIGURED')
+  assert.equal(calls, 0)
+  const rows = await db.select().from(schema.modelUsageRequests)
+  assert.equal(rows.length, 0)
+  const status = await getBudgetStatus()
+  assert.equal(status.spentCny, '0.000000')
+  assert.equal(status.reservedCny, '0.000000')
+})
+
+test('报告预留后请求前本地失败，完全释放且仅有一个终态台账', async () => {
+  const { getBudgetStatus } = await import('./budget')
+  await db.execute(sql`
+    CREATE OR REPLACE FUNCTION fail_report_running() RETURNS trigger AS $trigger$
+    BEGIN
+      IF NEW.status = 'running' AND NEW.purpose = 'resume_strategy' THEN
+        RAISE EXCEPTION 'REPORT_NOT_SENT_TEST';
+      END IF;
+      RETURN NEW;
+    END;
+    $trigger$ LANGUAGE plpgsql
+  `)
+  await db.execute(sql`
+    CREATE TRIGGER fail_report_running BEFORE UPDATE OF status ON model_usage_requests
+    FOR EACH ROW EXECUTE FUNCTION fail_report_running()
+  `)
+  try {
+    let calls = 0
+    globalThis.fetch = async () => {
+      calls += 1
+      throw new Error('不应调用上游')
+    }
+    const created = await generateReport()
+    const failed = await waitFor(created.report.id, 'error')
+    assert.ok(failed.errorCode?.includes('update "model_usage_requests"'))
+    assert.equal(calls, 0)
+    const rows = await db.select().from(schema.modelUsageRequests)
+    assert.equal(rows.length, 1)
+    assert.equal(rows[0].status, 'failed')
+    assert.equal(rows[0].actualAmount, '0.000000')
+    assert.equal(rows[0].errorCode, 'NOT_SENT')
+    const status = await getBudgetStatus()
+    assert.equal(status.spentCny, '0.000000')
+    assert.equal(status.reservedCny, '0.000000')
+  } finally {
+    await db.execute(sql`DROP TRIGGER IF EXISTS fail_report_running ON model_usage_requests`)
+    await db.execute(sql`DROP FUNCTION IF EXISTS fail_report_running()`)
+  }
+})
+
+for (const failure of [
+  { name: '网络错误', respond: async () => { throw new TypeError('fake report network failure') } },
+  { name: 'HTTP 500', respond: async () => new Response('{"error":"fake"}', { status: 500 }) },
+]) {
+  test(`报告已尝试上游后发生${failure.name}，仅保守结算一次`, async () => {
+    const { getBudgetStatus } = await import('./budget')
+    let calls = 0
+    globalThis.fetch = async () => {
+      calls += 1
+      return failure.respond()
+    }
+    const created = await generateReport()
+    await waitFor(created.report.id, 'error')
+    assert.equal(calls, 1)
+    const rows = await db.select().from(schema.modelUsageRequests)
+    assert.equal(rows.length, 1)
+    assert.equal(rows[0].status, 'conservative')
+    assert.equal(rows[0].actualAmount, rows[0].reservedAmount)
+    const status = await getBudgetStatus()
+    assert.equal(status.spentCny, rows[0].reservedAmount)
+    assert.equal(status.reservedCny, '0.000000')
+  })
+}
+
+test('报告成功按真实 usage 结算一次并释放多余预留', async () => {
+  const { getBudgetStatus } = await import('./budget')
+  globalThis.fetch = async () => upstream(fakeReport())
+  const created = await generateReport()
+  await waitFor(created.report.id, 'done')
+  const rows = await db.select().from(schema.modelUsageRequests)
+  assert.equal(rows.length, 1)
+  assert.equal(rows[0].status, 'completed')
+  assert.equal(rows[0].actualAmount, '0.000150')
+  assert.ok(Number(rows[0].actualAmount) < Number(rows[0].reservedAmount))
+  const status = await getBudgetStatus()
+  assert.equal(status.spentCny, rows[0].actualAmount)
+  assert.equal(status.reservedCny, '0.000000')
 })

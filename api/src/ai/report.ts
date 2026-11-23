@@ -12,6 +12,7 @@ import {
 import { db } from '../db'
 import {
   markModelCallRunning,
+  releaseModelCall,
   reserveModelCall,
   settleModelCall,
   usageFromOpenAI,
@@ -323,6 +324,7 @@ async function runReport(id: string) {
     return
   }
   let reservationId: string | null = null
+  let upstreamAttempted = false
   let usage: ReturnType<typeof usageFromOpenAI> = null
   let status = 'done'
   let errorCode: string | null = null
@@ -342,16 +344,17 @@ async function runReport(id: string) {
       added_or_changed_job_ids: [...diff.added_job_ids, ...diff.changed_job_ids],
       removed_job_ids: diff.removed_job_ids,
     }
+    const apiKey = process.env.MOONSHOT_API_KEY
+    if (!apiKey) throw new Error('MODEL_NOT_CONFIGURED')
     const reservation = await reserveModelCall({
       purpose: 'resume_strategy', provider: 'moonshot', model: task.model,
       estimatedInputTokens: estimateTokens(JSON.stringify(prompt)), maxCompletionTokens: MAX_COMPLETION_TOKENS,
       businessId: id, requestId: randomUUID(),
     })
     reservationId = reservation.requestId
-    const apiKey = process.env.MOONSHOT_API_KEY
-    if (!apiKey) throw new Error('MODEL_NOT_CONFIGURED')
     await markModelCallRunning(reservationId)
     const baseUrl = process.env.MOONSHOT_BASE_URL || 'https://api.moonshot.cn/v1'
+    upstreamAttempted = true
     const response = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({
@@ -382,7 +385,11 @@ async function runReport(id: string) {
     errorCode = controller.signal.aborted ? 'CANCELED' : error instanceof Error ? error.message.slice(0, 100) : 'REPORT_ERROR'
   } finally {
     if (reservationId) {
-      await settleModelCall({ requestId: reservationId, usage, failed: status !== 'done', errorCode: errorCode ?? undefined })
+      if (upstreamAttempted) {
+        await settleModelCall({ requestId: reservationId, usage, failed: status !== 'done', errorCode: errorCode ?? undefined })
+      } else {
+        await releaseModelCall(reservationId)
+      }
     }
     await db.update(resumeStrategyReports).set({ status, errorCode, usageRequestId: reservationId, completedAt: new Date() }).where(eq(resumeStrategyReports.id, id))
     activeReports.delete(id)
