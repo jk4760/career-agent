@@ -5,13 +5,6 @@ import { uuid } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
   Sheet,
   SheetContent,
   SheetDescription,
@@ -23,7 +16,6 @@ import { Textarea } from '@/components/ui/textarea'
 import { formatFileSize, type ImportDraft } from '@/lib/fileImport'
 import { CAPABILITY_L1_OPTIONS, type Material } from '@/types'
 
-const NONE = '__none__'
 
 function parseTags(input: string): string[] {
   return input
@@ -94,7 +86,7 @@ export function MaterialForm({
         title: title.trim(),
         role: role.trim() || null,
         duration: duration.trim() || null,
-        capabilityL1: capabilityL1 || null,
+        capabilityL1: capabilityL1.trim() || null,
         capabilityL2: capabilityL2.trim() || null,
         tags: parseTags(tags),
         facets,
@@ -178,6 +170,7 @@ export function MaterialForm({
                   }}
                 />
               </div>
+              <p className="text-xs text-muted-foreground">用于素材库顶部的「故事方向」筛选，可回车添加多个。</p>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="m-project">所属项目 *</Label>
@@ -216,23 +209,37 @@ export function MaterialForm({
               />
             </div>
             <div className="space-y-1.5">
-              <Label>能力域（capability_l1）</Label>
-              <Select
-                value={capabilityL1 || NONE}
-                onValueChange={(v) => setCapabilityL1(v === NONE ? '' : (v as string))}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue>{(v: string) => (v === NONE ? '未设置' : v)}</SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={NONE}>未设置</SelectItem>
-                  {CAPABILITY_L1_OPTIONS.map((c) => (
-                    <SelectItem key={c} value={c}>
-                      {c}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label htmlFor="m-cap1">能力域（capability_l1）</Label>
+              <div className="relative">
+                <Input
+                  id="m-cap1"
+                  list="m-cap1-options"
+                  placeholder="选择或输入，如：AI 产品"
+                  autoComplete="off"
+                  maxLength={40}
+                  className={capabilityL1 ? 'pr-8' : undefined}
+                  value={capabilityL1}
+                  onChange={(event) => setCapabilityL1(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.nativeEvent.isComposing) return
+                    if (event.key === 'Enter') event.preventDefault()
+                  }}
+                />
+                {capabilityL1 && (
+                  <button
+                    type="button"
+                    aria-label="清空能力域"
+                    className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    onClick={() => setCapabilityL1('')}
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                )}
+                <datalist id="m-cap1-options">
+                  {CAPABILITY_L1_OPTIONS.map((option) => <option key={option} value={option} />)}
+                </datalist>
+              </div>
+              <p className="text-xs text-muted-foreground">单值，可选择建议项或自定义，留空则不设置。</p>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="m-cap2">细分能力（capability_l2）</Label>
