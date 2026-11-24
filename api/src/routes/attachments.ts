@@ -1,6 +1,8 @@
 import { Hono } from 'hono'
 import { getAttachment, putAttachment } from '../storage'
 
+const MAX_ATTACHMENT_SIZE = 25 * 1024 * 1024
+
 export const attachmentsRoute = new Hono()
   // putAttachmentFile：multipart 上传，原文件存磁盘（路径按 materialId 分目录）
   .post('/:id/attachments', async (c) => {
@@ -8,6 +10,7 @@ export const attachmentsRoute = new Hono()
     const body = await c.req.parseBody()
     const file = body['file']
     if (!(file instanceof File)) return c.json({ error: 'file field is required' }, 400)
+    if (file.size > MAX_ATTACHMENT_SIZE) return c.json({ error: '附件不能超过 25 MB' }, 413)
     const data = Buffer.from(await file.arrayBuffer())
     await putAttachment(id, file.name, data)
     return c.json({ ok: true, name: file.name, size: file.size }, 201)

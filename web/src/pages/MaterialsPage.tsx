@@ -14,7 +14,7 @@ import {
   Trash2,
   Upload,
 } from 'lucide-react'
-import { MaterialForm } from '@/components/MaterialForm'
+import { MaterialForm, type MaterialSaveResult } from '@/components/MaterialForm'
 import { MarkdownContent } from '@/components/MarkdownContent'
 import {
   AlertDialog,
@@ -199,17 +199,28 @@ export default function MaterialsPage() {
     setFormOpen(true)
   }
 
-  const handleSave = async (material: Material, file?: File) => {
-    const saved = await repo.saveMaterial(material)
-    if (file) await repo.putAttachmentFile(saved.id, file)
+  const handleSave = async (material: Material, files: File[]): Promise<MaterialSaveResult> => {
+    let saved = await repo.saveMaterial(material)
+    const failedFiles: File[] = []
+    for (const file of files) {
+      try {
+        await repo.putAttachmentFile(saved.id, file)
+        const attachments = [
+          ...saved.attachments.filter((attachment) => attachment.name !== file.name),
+          createAttachmentMeta(file),
+        ]
+        saved = await repo.saveMaterial({ ...saved, attachments })
+      } catch {
+        failedFiles.push(file)
+      }
+    }
     setMaterials((current) => {
       const exists = current.some((item) => item.id === saved.id)
       return exists
         ? current.map((item) => (item.id === saved.id ? saved : item))
         : [saved, ...current]
     })
-    setImportDraft(null)
-    setImportFile(null)
+    return { material: saved, failedFiles }
   }
 
   const onFileChosen = async (event: React.ChangeEvent<HTMLInputElement>) => {
