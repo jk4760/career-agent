@@ -7,8 +7,11 @@
 在本机终端运行：
 
 ```bash
-ssh -i ~/.ssh/nextcareer_deploy -N -L 8080:127.0.0.1:80 ubuntu@49.235.68.206
+ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=3 \
+  -i ~/.ssh/nextcareer_deploy -N -L 8080:127.0.0.1:80 ubuntu@49.235.68.206
 ```
+
+不需要 VPN。`ServerAliveInterval=30` 每 30 秒检查一次连接，减少空闲隧道被网络设备断开；若连续 3 次无响应，客户端会明确退出，需要重新运行命令。
 
 终端需要持续运行。该命令使用现有部署通道，不复制或移动 Claw 私钥，不修改 Claw wrapper、白名单或定时任务。
 
