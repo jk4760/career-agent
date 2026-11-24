@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { ChevronDown, ChevronRight, Eye, Plus, SendHorizontal, Sparkles, Square, X } from 'lucide-react'
 import { ContextSelector } from '@/components/ai/ContextSelector'
 import { SaveAIReplyDialog } from '@/components/ai/SaveAIReplyDialog'
+import { NewConversationDialog } from '@/components/ai/NewConversationDialog'
 import { MarkdownContent } from '@/components/MarkdownContent'
 import { Button } from '@/components/ui/button'
 import {
@@ -48,6 +49,7 @@ export function AssistantPanel() {
   const [assistantId, setAssistantId] = useState('')
   const [saveTarget, setSaveTarget] = useState<{ message: AIMessage; type: AISaveTargetType; sourceQuestion: string } | null>(null)
   const [libraryMaterials, setLibraryMaterials] = useState<Material[]>([])
+  const [newConversationOpen, setNewConversationOpen] = useState(false)
   const [contextOpen, setContextOpen] = useState(false)
   const [contextPreview, setContextPreview] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -62,13 +64,14 @@ export function AssistantPanel() {
     localStorage.setItem(CURRENT_CONVERSATION_KEY, id)
   }
 
-  const newConversation = async () => {
-    const created = await createAIConversation()
+  const newConversation = async (catalogId?: string) => {
+    const created = await createAIConversation(catalogId)
     const conversation = { ...created, title: '新对话' }
     setConversations((current) => [conversation, ...current])
     setCurrentId(created.id)
     setSelection(created.contextSelection)
     setMessages([])
+    setNewConversationOpen(false)
     localStorage.setItem(CURRENT_CONVERSATION_KEY, created.id)
   }
 
@@ -211,6 +214,8 @@ export function AssistantPanel() {
       input.trim(),
   )
 
+  const currentConversation = conversations.find((conversation) => conversation.id === currentId)
+
   const contextSummary = (
     <div className="border-t px-3 py-2">
       <div className="flex items-center justify-between">
@@ -246,9 +251,9 @@ export function AssistantPanel() {
           <SelectTrigger
             size="sm"
             className="min-w-0 flex-1 border-transparent bg-transparent px-1.5 text-xs shadow-none"
-            aria-label={`当前模型 ${settings?.model ?? '未配置'}；点击切换会话`}
+            aria-label={`当前模型 ${currentConversation?.model ?? settings?.model ?? '未配置'}；点击切换会话`}
           >
-            <SelectValue>{() => settings?.enabled ? settings.model : '未配置模型'}</SelectValue>
+            <SelectValue>{() => settings?.enabled ? (currentConversation?.model ?? settings.model) : '未配置模型'}</SelectValue>
           </SelectTrigger>
           <SelectContent>
             {conversations.map((conversation) => (
@@ -256,7 +261,7 @@ export function AssistantPanel() {
             ))}
           </SelectContent>
         </Select>
-        <Button variant="ghost" size="icon-xs" aria-label="新建会话" onClick={() => void newConversation()} disabled={!settings?.enabled || !settings.configured}>
+        <Button variant="ghost" size="icon-xs" aria-label="新建会话" onClick={() => setNewConversationOpen(true)} disabled={!settings?.enabled || !settings.configured}>
           <Plus />
         </Button>
         <Button variant="ghost" size="icon-xs" aria-label={mobile ? '返回' : '收起 AI 助手面板'} onClick={() => mobile ? setMobileOpen(false) : setCollapsed(true)}>
@@ -345,6 +350,12 @@ export function AssistantPanel() {
       </Button>
       {mobileOpen && <div className="fixed inset-0 z-50 flex flex-col bg-card md:hidden">{panel(true)}</div>}
       <ContextSelector open={contextOpen} selection={selection} startPreview={contextPreview} onCancel={() => { setContextOpen(false); setContextPreview(false) }} onApply={applyContext} />
+      <NewConversationDialog
+        open={newConversationOpen}
+        catalog={settings?.catalog ?? []}
+        onCancel={() => setNewConversationOpen(false)}
+        onCreate={newConversation}
+      />
       <SaveAIReplyDialog
         message={saveTarget?.message ?? null}
         targetType={saveTarget?.type ?? null}

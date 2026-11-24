@@ -18,9 +18,13 @@ import {
   type ContextSelection,
 } from './context'
 import { estimateTokens } from './pricing'
+import {
+  assertCatalogEntryUsable,
+  catalogEntry,
+  catalogEntryForConversation,
+} from './modelCatalog'
 
 const UPSTREAM_TIMEOUT_MS = 120_000
-const MAX_COMPLETION_TOKENS = 2000
 
 type ProviderMessage = {
   role: string
@@ -47,13 +51,16 @@ function errorCode(error: unknown): string {
   return 'UPSTREAM_ERROR'
 }
 
-export async function createConversation() {
+export async function createConversation(catalogId?: string) {
+  const entry = catalogEntry(catalogId)
+  if (!entry) throw new Error('MODEL_NOT_AVAILABLE')
+  assertCatalogEntryUsable(entry)
   const selection = await defaultContextSelection()
   const [conversation] = await db
     .insert(conversations)
     .values({
-      provider: 'moonshot',
-      model: process.env.MOONSHOT_MODEL || 'kimi-k3.1-pro',
+      provider: entry.provider,
+      model: entry.model,
       contextSelection: selection,
     })
     .returning()
@@ -152,6 +159,9 @@ export async function createChatStream(input: ChatInput, downstreamSignal?: Abor
     conversation = await createConversation()
     conversationId = conversation.id
   }
+  const modelConfig = catalogEntryForConversation(conversation.provider, conversation.model)
+  if (!modelConfig) throw new Error('MODEL_NOT_AVAILABLE')
+  assertCatalogEntryUsable(modelConfig)
   const selection = input.contextSelection
     ? normalizeContextSelection(input.contextSelection, conversation.contextSelection as ContextSelection)
     : (conversation.contextSelection as ContextSelection)
@@ -220,23 +230,22 @@ export async function createChatStream(input: ChatInput, downstreamSignal?: Abor
           ]
           const reservation = await reserveModelCall({
             purpose: 'chat',
-            provider: 'moonshot',
+            provider: conversation.provider,
             model: conversation.model,
             estimatedInputTokens: estimateTokens(JSON.stringify(providerMessages)),
-            maxCompletionTokens: MAX_COMPLETION_TOKENS,
+            maxCompletionTokens: modelConfig.maxCompletionTokens,
             businessId: assistantMessage.id,
             requestId: randomUUID(),
           })
           reservationId = reservation.requestId
-          const apiKey = process.env.MOONSHOT_API_KEY
+          const apiKey = process.env[modelConfig.apiKeyEnv]
           if (!apiKey) {
             await releaseModelCall(reservation.requestId)
             throw new ContextError('模型服务未配置')
           }
           await markModelCallRunning(reservation.requestId)
           sent = true
-          const baseUrl = process.env.MOONSHOT_BASE_URL || 'https://api.moonshot.cn/v1'
-          const resp = await fetch(`${baseUrl}/chat/completions`, {
+          const resp = await fetch(`${modelConfig.baseUrl}/chat/completions`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -244,8 +253,8 @@ export async function createChatStream(input: ChatInput, downstreamSignal?: Abor
             },
             body: JSON.stringify({
               model: conversation.model,
-              reasoning_effort: 'low',
-              max_completion_tokens: MAX_COMPLETION_TOKENS,
+              ...(modelConfig.capabilities.reasoning ? { reasoning_effort: 'low' } : {}),
+              max_completion_tokens: modelConfig.maxCompletionTokens,
               stream: true,
               messages: providerMessages,
             }),

@@ -159,11 +159,30 @@ export interface AISaveResult {
   source: AISourceMetadata
 }
 
+export interface AIModelCatalogItem {
+  id: string
+  label: string
+  provider: string
+  model: string
+  configured: boolean
+  enabled: boolean
+  is_default: boolean
+  capabilities: {
+    streaming: boolean
+    usage: boolean
+    reasoning: boolean
+    jsonSchema: boolean
+  }
+  priceConfigured: boolean
+  disabledReason: string | null
+}
+
 export interface AISettings {
   provider: string
   baseUrl: string
   model: string
   models: string[]
+  catalog: AIModelCatalogItem[]
   configured: boolean
   enabled: boolean
   budget: {
@@ -200,6 +219,7 @@ export interface AIContextEstimate {
 export interface AIConversation {
   id: string
   title: string
+  provider: string
   model: string
   contextSelection: AIContextSelection
   updatedAt: string

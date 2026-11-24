@@ -14,8 +14,12 @@ export function listAIConversations(): Promise<AIConversation[]> {
   return request('/ai/conversations')
 }
 
-export function createAIConversation(): Promise<AIConversation> {
-  return request('/ai/conversations', { method: 'POST' })
+export function createAIConversation(catalogId?: string): Promise<AIConversation> {
+  return request('/ai/conversations', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ catalogId }),
+  })
 }
 
 export function getAIConversation(id: string): Promise<AIConversation & { messages: AIMessage[] }> {

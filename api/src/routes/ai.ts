@@ -3,6 +3,7 @@ import { asc, desc, eq } from 'drizzle-orm'
 import { conversations, messages } from '../../../db/schema'
 import { db } from '../db'
 import { getBudgetStatus } from '../ai/budget'
+import { publicModelCatalog } from '../ai/modelCatalog'
 import { saveAIMessage } from '../ai/saveMessage'
 import {
   conversationDetails,
@@ -27,6 +28,7 @@ export const aiRoute = new Hono()
       models: [model],
       configured: Boolean(process.env.MOONSHOT_API_KEY),
       enabled: chatEnabled(),
+      catalog: publicModelCatalog(),
       budget: await getBudgetStatus(),
     })
   })
@@ -42,6 +44,7 @@ export const aiRoute = new Hono()
         .limit(1)
       result.push({
         id: conversation.id,
+        provider: conversation.provider,
         model: conversation.model,
         contextSelection: conversation.contextSelection,
         updatedAt: conversation.updatedAt,
@@ -50,7 +53,17 @@ export const aiRoute = new Hono()
     }
     return c.json(result)
   })
-  .post('/conversations', async (c) => c.json(await createConversation(), 201))
+  .post('/conversations', async (c) => {
+    if (!chatEnabled()) return c.json({ error: 'AI 对话功能未启用', code: 'FEATURE_DISABLED' }, 403)
+    const body = await c.req.json().catch(() => ({}))
+    const catalogId = typeof body.catalogId === 'string' ? body.catalogId : undefined
+    try {
+      return c.json(await createConversation(catalogId), 201)
+    } catch (error) {
+      const code = error instanceof Error ? error.message : 'MODEL_NOT_AVAILABLE'
+      return c.json({ error: code }, 400)
+    }
+  })
   .get('/conversations/:id', async (c) => {
     const result = await conversationDetails(c.req.param('id'))
     return result ? c.json(result) : c.json({ error: '会话不存在' }, 404)
