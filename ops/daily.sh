@@ -91,8 +91,9 @@ main() {
       exec 9>"$LOCK_FILE"
       if command -v flock >/dev/null 2>&1; then
         if ! flock -n 9; then
-          log "另一个 $cmd 正在运行，本次跳过（flock 防重入）"
-          exit 0
+          log "另一个 $cmd 正在运行，本次未执行（flock 防重入）"
+          echo "另一个 $cmd 正在运行，本次未执行" >&2
+          exit 75
         fi
       else
         log "警告：系统无 flock（非生产环境？），跳过重入保护"

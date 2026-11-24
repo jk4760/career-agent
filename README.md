@@ -117,7 +117,7 @@ docker compose --profile manual run --rm collector
 
 **打分**：最终排序分 = LLM 主导分（`jobs.llm_eval` 缓存，Moonshot/Kimi kimi-k3.1-pro（reasoning_effort=low），prompt 版本化于 `api/src/llm/scorePrompt.ts`（v1.2 起不考虑新鲜度））+ 反馈调整（不合适 −20 / 感兴趣 +10 职能词连坐，60 天衰减；每岗仅取最新一条相关反馈调整一次，不按历史事件数或命中关键词数累加）；LLM 缺失自动降级为规则四维参考分 + 反馈调整。规则分同时产出事实标签（薪资达标/★目标公司/7 天内等）。每日评分只补「近 7 天入库且未评分」岗位，单次硬上限 60 条；偏好七字段实际变化才触发近 60 天重评；prompt 版本升级迁移走人工显式触发。
 
-**每日编排**：唯一入口 `ops/daily.sh`（flock 防重入，日志 `ops/logs/ops-YYYYMMDD.log`，失败非零退出 + 同群 ⚠️ 告警）：
+**每日编排**：唯一入口 `ops/daily.sh`（flock 防重入，锁被占用时退出 75；日志 `ops/logs/ops-YYYYMMDD.log`，失败非零退出 + 同群 ⚠️ 告警）：
 
 ```bash
 ops/daily.sh collect-and-push   # 采集 → 评分 → 推送（早 8:30）

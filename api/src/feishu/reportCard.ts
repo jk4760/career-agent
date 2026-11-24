@@ -34,7 +34,7 @@ export function buildReportSummaryCard(
       columns: [{
         tag: 'column', width: 'auto',
         elements: [{
-          tag: 'button', type: 'default', content: '更新简历建议',
+          tag: 'button', type: 'default', text: { tag: 'plain_text', content: '更新简历建议' },
           behaviors: [{ type: 'callback', value: { action: 'resume_strategy_update', stage: 'submit', cardJobs: ['resume-strategy'] } }],
         }],
       }],

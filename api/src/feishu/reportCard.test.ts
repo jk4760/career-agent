@@ -30,7 +30,14 @@ test('报告 action flag=false 不可见，开启后才显示', () => {
   process.env.RESUME_STRATEGY_FEISHU_ACTION_ENABLED = 'false'
   assert.ok(!JSON.stringify(buildReportSummaryCard(REPORT, { interestedCount: 1, stale: false })).includes('更新简历建议'))
   process.env.RESUME_STRATEGY_FEISHU_ACTION_ENABLED = 'true'
-  assert.ok(JSON.stringify(buildReportSummaryCard(REPORT, { interestedCount: 1, stale: false })).includes('更新简历建议'))
+  const card = buildReportSummaryCard(REPORT, { interestedCount: 1, stale: false })
+  assert.ok(JSON.stringify(card).includes('更新简历建议'))
+  const body = card.body as { elements: Record<string, unknown>[] }
+  const action = body.elements.find((element) => element.tag === 'column_set')!
+  const columns = action.columns as { elements: Record<string, unknown>[] }[]
+  const button = columns[0].elements[0]
+  assert.deepEqual(button.text, { tag: 'plain_text', content: '更新简历建议' })
+  assert.equal('content' in button, false)
 })
 
 test('明文和加密 Challenge 回归，伪造 token 403', async () => {
