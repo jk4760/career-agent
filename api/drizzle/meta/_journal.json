@@ -71,6 +71,13 @@
       "when": 1795397502824,
       "tag": "0009_nappy_lady_mastermind",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1795511172398,
+      "tag": "0010_wandering_vulture",
+      "breakpoints": true
     }
   ]
 }

@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { ChevronDown, ChevronRight, Eye, Plus, SendHorizontal, Sparkles, Square, X } from 'lucide-react'
 import { ContextSelector } from '@/components/ai/ContextSelector'
+import { SaveAIReplyDialog } from '@/components/ai/SaveAIReplyDialog'
 import { MarkdownContent } from '@/components/MarkdownContent'
 import { Button } from '@/components/ui/button'
 import {
@@ -21,7 +23,7 @@ import {
 } from '@/lib/aiApi'
 import { useRepository } from '@/lib/repository'
 import { cn, uuid } from '@/lib/utils'
-import type { AIContextSelection, AIConversation, AIMessage, AISettings } from '@/types'
+import type { AIContextSelection, AIConversation, AIMessage, AISettings, AISaveTargetType, Material } from '@/types'
 
 const CURRENT_CONVERSATION_KEY = 'nextcareer.current-conversation.v1'
 const EMPTY_SELECTION: AIContextSelection = {
@@ -33,6 +35,7 @@ const EMPTY_SELECTION: AIContextSelection = {
 
 export function AssistantPanel() {
   const repo = useRepository()
+  const navigate = useNavigate()
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [settings, setSettings] = useState<AISettings | null>(null)
@@ -43,6 +46,8 @@ export function AssistantPanel() {
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [assistantId, setAssistantId] = useState('')
+  const [saveTarget, setSaveTarget] = useState<{ message: AIMessage; type: AISaveTargetType; sourceQuestion: string } | null>(null)
+  const [libraryMaterials, setLibraryMaterials] = useState<Material[]>([])
   const [contextOpen, setContextOpen] = useState(false)
   const [contextPreview, setContextPreview] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -186,6 +191,18 @@ export function AssistantPanel() {
     void result
   }
 
+  const openSave = async (message: AIMessage, type: AISaveTargetType) => {
+    const index = messages.findIndex((item) => item.id === message.id)
+    const sourceQuestion = messages.slice(0, index).reverse().find((item) => item.role === 'user')?.content ?? ''
+    try {
+      const materials = await repo.listMaterials()
+      setLibraryMaterials(materials)
+      setSaveTarget({ message, type, sourceQuestion })
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : '素材列表读取失败')
+    }
+  }
+
   const canSend = Boolean(
     currentId &&
       settings?.enabled &&
@@ -271,6 +288,12 @@ export function AssistantPanel() {
                   {{ stopped: '已停止', error: '生成失败', truncated: '内容已截断', streaming: '', done: '' }[message.status]}
                 </span>
               )}
+              {message.role === 'assistant' && message.status === 'done' && message.content.trim() && (
+                <div className="mt-1 flex min-h-7 items-center gap-3 text-[11px] text-muted-foreground">
+                  <button type="button" className="hover:text-primary" onClick={() => void openSave(message, 'material')}>保存为素材</button>
+                  <button type="button" className="hover:text-primary" onClick={() => void openSave(message, 'question')}>保存为问答</button>
+                </div>
+              )}
             </div>
           ))
         )}
@@ -322,6 +345,18 @@ export function AssistantPanel() {
       </Button>
       {mobileOpen && <div className="fixed inset-0 z-50 flex flex-col bg-card md:hidden">{panel(true)}</div>}
       <ContextSelector open={contextOpen} selection={selection} startPreview={contextPreview} onCancel={() => { setContextOpen(false); setContextPreview(false) }} onApply={applyContext} />
+      <SaveAIReplyDialog
+        message={saveTarget?.message ?? null}
+        targetType={saveTarget?.type ?? null}
+        sourceQuestion={saveTarget?.sourceQuestion ?? ''}
+        materials={libraryMaterials}
+        onClose={() => setSaveTarget(null)}
+        onView={(result) => {
+          setSaveTarget(null)
+          setMobileOpen(false)
+          navigate(result.targetType === 'material' ? `/materials?focus=${result.targetId}` : `/questions?focus=${result.targetId}`)
+        }}
+      />
     </>
   )
 }

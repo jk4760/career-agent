@@ -1,7 +1,7 @@
-import { desc, eq } from 'drizzle-orm'
+import { and, desc, eq } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { interviewQuestions } from '../../../db/schema'
+import { aiMessageSaves, interviewQuestions } from '../../../db/schema'
 import { db } from '../db'
 
 const questionSchema = z.object({
@@ -18,10 +18,14 @@ export const questionsRoute = new Hono()
   // listQuestions()
   .get('/', async (c) => {
     const rows = await db
-      .select()
+      .select({ question: interviewQuestions, source: aiMessageSaves })
       .from(interviewQuestions)
+      .leftJoin(aiMessageSaves, and(
+        eq(aiMessageSaves.targetType, 'question'),
+        eq(aiMessageSaves.targetId, interviewQuestions.id),
+      ))
       .orderBy(desc(interviewQuestions.updatedAt))
-    return c.json(rows)
+    return c.json(rows.map(({ question, source }) => ({ ...question, aiSource: source })))
   })
 
   // saveQuestion(q)：按 id upsert

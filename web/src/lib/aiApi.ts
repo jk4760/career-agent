@@ -1,5 +1,5 @@
 import { API_BASE } from '@/lib/apiRepository'
-import type { AIContextEstimate, AIContextSelection, AIConversation, AIMessage } from '@/types'
+import type { AIContextEstimate, AIContextSelection, AIConversation, AIMessage, AISaveResult, AISaveTargetType } from '@/types'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, init)
@@ -52,4 +52,15 @@ export function streamAIChat(input: {
 
 export function stopAIChat(messageId: string): Promise<{ stopped: boolean }> {
   return request(`/ai/messages/${messageId}/stop`, { method: 'POST' })
+}
+
+export function saveAIMessage(
+  messageId: string,
+  input: { targetType: AISaveTargetType; data: Record<string, unknown> },
+): Promise<AISaveResult> {
+  return request(`/ai/messages/${messageId}/save`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
 }

@@ -114,6 +114,7 @@ export interface Material {
   content: string | null
   attachments: AttachmentMeta[]
   others: Record<string, unknown> | null
+  aiSource?: AISourceMetadata | null
   updatedAt: string
 }
 
@@ -126,6 +127,7 @@ export interface InterviewQuestion {
   linkedMaterialId: string | null
   /** 把握度 1–5 */
   confidence: number | null
+  aiSource?: AISourceMetadata | null
   updatedAt: string
 }
 
@@ -135,6 +137,26 @@ export interface PushLog {
   channel: string
   pushedAt: string
   userReply: string | null
+}
+
+export type AISaveTargetType = 'material' | 'question'
+
+export interface AISourceMetadata {
+  sourceType: 'ai_message'
+  conversationId: string
+  messageId: string
+  provider: string
+  model: string
+  savedAt: string
+  targetType: AISaveTargetType
+  targetId: string
+}
+
+export interface AISaveResult {
+  targetType: AISaveTargetType
+  targetId: string
+  existing: boolean
+  source: AISourceMetadata
 }
 
 export interface AISettings {

@@ -189,6 +189,25 @@ export const messages = pgTable(
   (t) => [index('idx_messages_conversation_created').on(t.conversationId, t.createdAt)],
 )
 
+export const aiMessageSaves = pgTable(
+  'ai_message_saves',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    sourceType: text('source_type').notNull().default('ai_message'),
+    conversationId: uuid('conversation_id').notNull().references(() => conversations.id),
+    messageId: uuid('message_id').notNull().references(() => messages.id),
+    provider: text('provider').notNull(),
+    model: text('model').notNull(),
+    targetType: text('target_type').notNull(),
+    targetId: uuid('target_id').notNull(),
+    savedAt: timestamp('saved_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique('ai_message_saves_message_target_unique').on(t.messageId, t.targetType),
+    index('idx_ai_message_saves_target').on(t.targetType, t.targetId),
+  ],
+)
+
 export const resumeStrategySettings = pgTable('resume_strategy_settings', {
   id: uuid('id').primaryKey().defaultRandom(),
   selection: jsonb('selection').notNull(),

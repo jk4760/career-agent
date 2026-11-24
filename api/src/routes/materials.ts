@@ -1,7 +1,7 @@
-import { sql, desc, eq } from 'drizzle-orm'
+import { sql, and, desc, eq } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { interviewQuestions, materials } from '../../../db/schema'
+import { aiMessageSaves, interviewQuestions, materials } from '../../../db/schema'
 import { db } from '../db'
 
 const attachmentMetaSchema = z.object({
@@ -31,8 +31,15 @@ const materialSchema = z.object({
 export const materialsRoute = new Hono()
   // listMaterials()
   .get('/', async (c) => {
-    const rows = await db.select().from(materials).orderBy(desc(materials.updatedAt))
-    return c.json(rows)
+    const rows = await db
+      .select({ material: materials, source: aiMessageSaves })
+      .from(materials)
+      .leftJoin(aiMessageSaves, and(
+        eq(aiMessageSaves.targetType, 'material'),
+        eq(aiMessageSaves.targetId, materials.id),
+      ))
+      .orderBy(desc(materials.updatedAt))
+    return c.json(rows.map(({ material, source }) => ({ ...material, aiSource: source })))
   })
 
   // saveMaterial(m)：按 id upsert

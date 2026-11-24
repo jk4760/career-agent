@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   Bold,
   Check,
@@ -21,6 +22,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { MarkdownContent } from '@/components/MarkdownContent'
+import { AISourceNote } from '@/components/AISourceNote'
 import { ConfidenceStars, QuestionForm } from '@/components/QuestionForm'
 import {
   AlertDialog,
@@ -83,6 +85,7 @@ function QuestionStars({ value }: { value: number | null }) {
 
 export default function QuestionsPage() {
   const repo = useRepository()
+  const [searchParams] = useSearchParams()
   const [questions, setQuestions] = useState<InterviewQuestion[]>([])
   const [materials, setMaterials] = useState<Material[]>([])
   const [loading, setLoading] = useState(true)
@@ -146,6 +149,15 @@ export default function QuestionsPage() {
     setAnswerMode('edit')
     setSaveState('idle')
   }, [selected])
+
+  useEffect(() => {
+    const focus = searchParams.get('focus')
+    const target = questions.find((question) => question.id === focus)
+    if (target) {
+      setActiveCategory(target.category ?? '其他')
+      setSelectedId(target.id)
+    }
+  }, [questions, searchParams])
 
   const dirty = Boolean(
     selected &&
@@ -475,6 +487,7 @@ export default function QuestionsPage() {
                     <h3 className="text-[17px] font-semibold leading-snug">{draft.question}</h3>
                   )}
 
+                  <AISourceNote source={selected.aiSource} />
                   <div>
                     <div className="mb-1.5 flex items-center justify-between">
                       <span className="text-xs font-medium text-slate-500">回答草稿</span>

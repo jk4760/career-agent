@@ -3,6 +3,7 @@ import { asc, desc, eq } from 'drizzle-orm'
 import { conversations, messages } from '../../../db/schema'
 import { db } from '../db'
 import { getBudgetStatus } from '../ai/budget'
+import { saveAIMessage } from '../ai/saveMessage'
 import {
   conversationDetails,
   createChatStream,
@@ -90,6 +91,21 @@ export const aiRoute = new Hono()
       const code = error instanceof Error && 'code' in error ? String(error.code) : 'CHAT_ERROR'
       const message = error instanceof Error ? error.message : '对话请求失败'
       return c.json({ error: message, code }, 400)
+    }
+  })
+  .post('/messages/:id/save', async (c) => {
+    if (!chatEnabled()) return c.json({ error: 'AI 对话功能未启用', code: 'FEATURE_DISABLED' }, 403)
+    const body = await c.req.json().catch(() => null)
+    if (!body) return c.json({ error: 'invalid json' }, 400)
+    try {
+      const saved = await saveAIMessage(c.req.param('id'), body)
+      return c.json(saved, saved.existing ? 200 : 201)
+    } catch (error) {
+      const code = error instanceof Error ? error.message : 'SAVE_ERROR'
+      if (['SAVE_INPUT_INVALID', 'AI_MESSAGE_NOT_FOUND', 'AI_MESSAGE_NOT_SAVEABLE'].includes(code)) {
+        return c.json({ error: code }, 400)
+      }
+      throw error
     }
   })
   .post('/messages/:id/stop', (c) => c.json({ stopped: stopChat(c.req.param('id')) }))

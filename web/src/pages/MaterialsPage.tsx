@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   ChevronRight,
   Download,
@@ -15,6 +16,7 @@ import {
   Upload,
 } from 'lucide-react'
 import { MaterialForm, type MaterialSaveResult } from '@/components/MaterialForm'
+import { AISourceNote } from '@/components/AISourceNote'
 import { MarkdownContent } from '@/components/MarkdownContent'
 import {
   AlertDialog,
@@ -113,6 +115,7 @@ function AttachmentListCell({ material }: { material: Material }) {
 
 export default function MaterialsPage() {
   const repo = useRepository()
+  const [searchParams] = useSearchParams()
   const [materials, setMaterials] = useState<Material[]>([])
   const [facetCounts, setFacetCounts] = useState<{ value: string; count: number }[]>([])
   const [loading, setLoading] = useState(true)
@@ -145,6 +148,11 @@ export default function MaterialsPage() {
   useEffect(() => {
     void reload()
   }, [reload])
+
+  useEffect(() => {
+    const focus = searchParams.get('focus')
+    if (focus && materials.some((material) => material.id === focus)) setSelectedId(focus)
+  }, [materials, searchParams])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -570,6 +578,7 @@ export default function MaterialsPage() {
                     <p className="text-sm text-muted-foreground">暂无经历内容，点击底部「编辑故事」补充。</p>
                   )}
                 </div>
+                <AISourceNote source={selected.aiSource} />
                 {selected.tags.length > 0 && (
                   <p className="mt-5 text-xs leading-relaxed text-muted-foreground">
                     {selected.tags.map((tag) => `#${tag}`).join('  ')}
