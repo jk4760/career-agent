@@ -75,20 +75,6 @@ export function ReportCard({ refreshKey, basisSignal = 0, onOpenReport }: Props)
     if (basisSignal > 0) void openBasis()
   }, [basisSignal])
 
-  const applyBasis = async () => {
-    if (!draft) return
-    setSaving(true)
-    setError(null)
-    try {
-      setState(await saveReportBasis(draft))
-      setDialogOpen(false)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '依据保存失败')
-    } finally {
-      setSaving(false)
-    }
-  }
-
   const generate = async (mode: 'initial' | 'update' | 'rebuild' = 'update') => {
     if (!draft || saving) return
     setSaving(true)
@@ -239,7 +225,6 @@ export function ReportCard({ refreshKey, basisSignal = 0, onOpenReport }: Props)
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>取消</Button>
-            <Button variant="outline" onClick={applyBasis} disabled={saving}>应用选择</Button>
             {current && (
               <Button variant="outline" title="不携带上一版报告，按当前全部依据重新生成" onClick={() => void generate('rebuild')} disabled={saving || disabled || !state.resumeAvailable || state.interestedCount === 0}>
                 完整重建
