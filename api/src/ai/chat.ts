@@ -338,6 +338,10 @@ export async function createChatStream(input: ChatInput, downstreamSignal?: Abor
               completedAt: new Date(),
             })
             .where(eq(messages.id, assistantMessage.id))
+          await db
+            .update(conversations)
+            .set({ updatedAt: new Date() })
+            .where(eq(conversations.id, conversationId))
           if (activeGeneration?.messageId === assistantMessage.id) activeGeneration = null
           streamController.close()
         }

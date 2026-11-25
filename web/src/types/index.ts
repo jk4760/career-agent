@@ -222,7 +222,10 @@ export interface AIConversation {
   provider: string
   model: string
   contextSelection: AIContextSelection
+  createdAt: string
   updatedAt: string
+  lastMessage?: string | null
+  messageCount?: number
 }
 
 export interface AIMessage {

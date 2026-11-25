@@ -89,6 +89,24 @@ export function AssistantPanel() {
     })().catch((err) => setError(err instanceof Error ? err.message : 'AI 助手加载失败'))
   }, [repo])
 
+  useEffect(() => {
+    const continueConversation = (event: Event) => {
+      const id = (event as CustomEvent<string>).detail
+      void openConversation(id)
+        .then(() => {
+          setCollapsed(false)
+          setMobileOpen(true)
+          requestAnimationFrame(() => {
+            const list = messageListRef.current
+            if (list) list.scrollTop = list.scrollHeight
+          })
+        })
+        .catch((cause) => setError(cause instanceof Error ? cause.message : '历史会话加载失败'))
+    }
+    window.addEventListener('nextcareer:continue-conversation', continueConversation)
+    return () => window.removeEventListener('nextcareer:continue-conversation', continueConversation)
+  }, [])
+
   const updateAssistant = (id: string, patch: Partial<AIMessage>) => {
     setMessages((current) => current.map((message) => (message.id === id ? { ...message, ...patch } : message)))
   }

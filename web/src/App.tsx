@@ -15,7 +15,7 @@ const navItems = [
   { to: '/materials', label: '素材库', icon: FolderOpen, desc: '一行一个可讲的故事，服务面试表达' },
   { to: '/questions', label: '问题库', icon: MessagesSquare, desc: '维护面试问题、回答草稿与关联故事' },
   { to: '/preferences', label: '偏好设置', icon: Settings, desc: '静态筛选条件，供采集匹配使用' },
-  { to: '/ai-settings', label: 'AI 对话管理', icon: Settings2, desc: '配置模型服务，对话面板自动联动' },
+  { to: '/ai-settings', label: '历史对话', icon: Settings2, desc: '查看并继续历史会话' },
 ]
 
 function navLinkClass({ isActive }: { isActive: boolean }, extra = '') {

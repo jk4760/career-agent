@@ -36,18 +36,22 @@ export const aiRoute = new Hono()
     const rows = await db.select().from(conversations).orderBy(desc(conversations.updatedAt))
     const result = []
     for (const conversation of rows) {
-      const [first] = await db
+      const history = await db
         .select({ content: messages.content })
         .from(messages)
         .where(eq(messages.conversationId, conversation.id))
         .orderBy(asc(messages.createdAt))
-        .limit(1)
+      const first = history[0]
+      const last = history.at(-1)
       result.push({
         id: conversation.id,
         provider: conversation.provider,
         model: conversation.model,
         contextSelection: conversation.contextSelection,
+        createdAt: conversation.createdAt,
         updatedAt: conversation.updatedAt,
+        lastMessage: last?.content ?? null,
+        messageCount: history.length,
         title: first?.content.slice(0, 24) || '新对话',
       })
     }
