@@ -6,7 +6,7 @@ import { feedbackEvents, jobs } from '../../db/schema'
 import { db } from './db'
 
 export const PASS_REASONS = ['职能', '薪资', '地点', '职级', '公司', '其他'] as const
-export const INTERESTED_REASONS = ['职能对口', '薪资满意', '公司想去'] as const
+export const INTERESTED_REASONS = ['职能对口', '薪资满意', '公司想去', '面试练习'] as const
 export type FeedbackAction = 'interested' | 'pass' | 'applied'
 
 // 卡片按钮文案 → Web 枚举（设计稿 §3.1 展示文案与 Web 枚举的映射）
@@ -42,7 +42,7 @@ export async function addFeedback(
     reason &&
     !INTERESTED_REASONS.includes(reason as (typeof INTERESTED_REASONS)[number])
   ) {
-    return { ok: false, error: '感兴趣原因必须是：职能对口/薪资满意/公司想去' }
+    return { ok: false, error: '感兴趣原因必须是：职能对口/薪资满意/公司想去/面试练习' }
   }
   const [job] = await db.select({ id: jobs.id }).from(jobs).where(eq(jobs.id, jobId))
   if (!job) return { ok: false, error: 'job not found' }

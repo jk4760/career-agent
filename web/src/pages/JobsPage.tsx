@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Inbox } from 'lucide-react'
 import { EmptyState } from '@/components/EmptyState'
@@ -7,6 +7,7 @@ import { ReportCard } from '@/components/reports/ReportCard'
 import { ReportDetail } from '@/components/reports/ReportDetail'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useRepository } from '@/lib/repository'
+import { groupAllJobs } from '@/lib/jobSorting'
 import type { FeedbackAction, JobStatus, JobWithStatus } from '@/types'
 
 type TabValue = 'all' | JobStatus
@@ -34,13 +35,22 @@ export default function JobsPage() {
   const [basisSignal, setBasisSignal] = useState(0)
   const returnScroll = useRef(0)
   const requestSequence = useRef(0)
+  const preserveOrderRef = useRef(false)
 
   const reload = useCallback(async () => {
     const requestId = ++requestSequence.current
     const list = await repo.listJobs(tab === 'all' ? undefined : tab, sort)
     if (requestId !== requestSequence.current) return
-    // 「全部」tab 排除「不合适」（纯前端过滤；反馈事件保留，「不合适」tab 完整不变）
-    setJobs(tab === 'all' ? list.filter((j) => j.status !== 'pass') : list)
+    const preserveOrder = preserveOrderRef.current
+    preserveOrderRef.current = false
+    if (tab === 'all') {
+      const byId = new Map(list.map((job) => [job.id, job]))
+      setJobs((current) => preserveOrder && current.length
+        ? current.map((job) => byId.get(job.id) ?? job)
+        : groupAllJobs(list, sort))
+    } else {
+      setJobs(list)
+    }
     setLoaded(true)
   }, [repo, tab, sort])
 
@@ -67,7 +77,13 @@ export default function JobsPage() {
     reason: string | null,
     comment: string,
   ) => {
-    await repo.addFeedback(jobId, action, reason, comment)
+    preserveOrderRef.current = true
+    try {
+      await repo.addFeedback(jobId, action, reason, comment)
+    } catch (error) {
+      preserveOrderRef.current = false
+      throw error
+    }
   }
 
   if (reportId) {
@@ -85,6 +101,8 @@ export default function JobsPage() {
       />
     )
   }
+
+  const unclassifiedCount = jobs.filter((job) => job.status === 'new').length
 
   return (
     <div className="space-y-4">
@@ -180,8 +198,13 @@ export default function JobsPage() {
         )
       ) : (
         <div className="rounded-lg border bg-card [&>*+*]:border-t-[0.5px] [&>*+*]:border-border">
-          {jobs.map((job) => (
-            <JobRow key={job.id} job={job} onFeedback={handleFeedback} />
+          {jobs.map((job, index) => (
+            <Fragment key={job.id}>
+              {tab === 'all' && unclassifiedCount > 0 && index === unclassifiedCount && index < jobs.length && (
+                <div className="bg-muted/60 px-4 py-2 text-xs text-muted-foreground">以下为已分类岗位</div>
+              )}
+              <JobRow job={job} onFeedback={handleFeedback} />
+            </Fragment>
           ))}
         </div>
       )}

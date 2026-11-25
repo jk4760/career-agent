@@ -177,6 +177,7 @@ export function ruleScore(
 interface FeedbackEventRow {
   jobId: string
   action: string
+  reason?: string | null
   createdAt: Date
   canceledAt?: Date | null
 }
@@ -200,7 +201,7 @@ export function feedbackAdjustments(
     const src = jobs.find((j) => j.id === e.jobId)
     if (!src) return []
     const hits = hitAny(src.title, keywords)
-    const delta = e.action === 'pass' ? -20 : e.action === 'interested' ? 10 : 0
+    const delta = e.action === 'pass' ? -20 : e.action === 'interested' && e.reason !== '面试练习' ? 10 : 0
     return hits.map((keyword) => ({ jobId: e.jobId, keyword, delta, action: e.action }))
   })
   for (const job of jobs) {

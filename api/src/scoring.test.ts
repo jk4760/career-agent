@@ -56,8 +56,9 @@ function makeEvent(
   action: 'interested' | 'pass' | 'applied',
   createdAt: Date,
   canceledAt: Date | null = null,
+  reason: string | null = null,
 ) {
-  return { jobId, action, createdAt, canceledAt }
+  return { jobId, action, createdAt, canceledAt, reason }
 }
 
 const TARGET = makeJob('target', 'AI Agent 产品经理')
@@ -178,4 +179,23 @@ test('最新反馈从感兴趣改为不合适后，岗位排序随之反转', ()
 
   assert.deepEqual(order(interested), ['target', 'competitor'])
   assert.deepEqual(order(passed), ['competitor', 'target'])
+})
+
+
+test('面试练习保持感兴趣但不触发相似岗位加权，其他感兴趣原因维持 +10', () => {
+  const practice = feedbackAdjustments(
+    JOBS,
+    [makeEvent('source', 'interested', daysAgo(1), null, '面试练习')],
+    PREFS,
+    NOW,
+  ).get('target')
+  const company = feedbackAdjustments(
+    JOBS,
+    [makeEvent('source', 'interested', daysAgo(1), null, '公司想去')],
+    PREFS,
+    NOW,
+  ).get('target')
+
+  assert.equal(practice, undefined)
+  assert.equal(company?.total, 10)
 })

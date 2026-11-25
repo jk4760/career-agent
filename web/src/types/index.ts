@@ -6,7 +6,7 @@ export type FeedbackAction = 'interested' | 'pass' | 'applied'
 
 /** M4：结构化反馈维度——不合适必选六选一；感兴趣可选三选 */
 export const PASS_REASONS = ['职能', '薪资', '地点', '职级', '公司', '其他'] as const
-export const INTERESTED_REASONS = ['职能对口', '薪资满意', '公司想去'] as const
+export const INTERESTED_REASONS = ['职能对口', '薪资满意', '公司想去', '面试练习'] as const
 
 /** M4：岗位打分的可解释结构（api 实时计算） */
 export interface ScoreBreakdown {

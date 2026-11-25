@@ -26,7 +26,7 @@ interface FeedbackDialogProps {
   onConfirm: (reason: string | null, comment: string) => void
 }
 
-/** 反馈小弹窗：不合适必选六选一 reason；感兴趣可选三选；comment 保留 */
+/** 反馈小弹窗：不合适必选六选一 reason；感兴趣可选四选；comment 保留 */
 export function FeedbackDialog({
   open,
   action,
