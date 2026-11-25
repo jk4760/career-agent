@@ -1,5 +1,5 @@
 // M4 施工项 4：飞书推送（§3.4 规格）+ 同群 ⚠️ 告警
-// 选择逻辑：新岗（未推过且最终分≥60，近 7 天入库）+ 重推岗（首推满 5 天无任何反馈，
+// 选择逻辑：新岗（未推过且最终分≥60，近 7 天入库）+ 重推岗（首推满 5 天无任何反馈且当前最终分≥60，
 // 生命周期最多 2 次）合并 Top 15，最终分降序、同分 posted_at 新→旧；静默不推；
 // push_log 岗位级记录，仅推送成功后写入（失败重试天然同批，at-least-once）
 // M4.5 施工项 4：双通道——FEISHU_SEND_CHANNEL=webhook（现状）/ app（自建应用三态卡片）；
@@ -130,10 +130,11 @@ export async function selectCandidates(prefs: Prefs, now: Date): Promise<Candida
         candidates.push({ job, score, kind: 'new' })
       }
     } else if (pushes === 1) {
-      // 重推岗：首推满 5 天且无任何反馈（重推不重新校验分数，§3.4 用户裁定）
+      // 重推岗：首推满 5 天、无任何反馈，且当前最终分仍 ≥60
       const first = firstPushAt.get(job.id)
       if (
         first &&
+        score.final >= PUSH_THRESHOLD &&
         now.getTime() - first.getTime() >= REPUSH_AFTER_DAYS * 86400000 &&
         !jobsWithFeedback.has(job.id)
       ) {
