@@ -17,8 +17,16 @@ def ingest_jobs(jobs: list[dict]) -> dict:
         batch = jobs[i : i + 400]
         if not batch:
             break
-        resp = httpx.post(f"{API_BASE}/api/jobs/ingest", json={"jobs": batch}, timeout=60)
-        resp.raise_for_status()
+        try:
+            resp = httpx.post(f"{API_BASE}/api/jobs/ingest", json={"jobs": batch}, timeout=60)
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as error:
+            try:
+                code = error.response.json().get("code", "UNKNOWN")
+            except (ValueError, AttributeError):
+                code = "UNKNOWN"
+            log.error("ingest API 失败 status=%s code=%s", error.response.status_code, code)
+            raise
         result = resp.json()
         for k in total:
             total[k] += result.get(k, 0)

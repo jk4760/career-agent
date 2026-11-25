@@ -32,6 +32,16 @@ const ingestSchema = z.object({
   jobs: z.array(ingestJobSchema).max(500),
 })
 
+function ingestErrorCode(error: unknown): string {
+  let current: unknown = error
+  while (current && typeof current === 'object') {
+    const code = (current as { code?: unknown }).code
+    if (typeof code === 'string' && code) return code
+    current = (current as { cause?: unknown }).cause
+  }
+  return 'UNKNOWN'
+}
+
 export const jobsRoute = new Hono()
   // listJobs(status?, sort?)：状态由最新一条反馈事件派生；M4 起附可解释打分
   // sort=score（默认）：最终排序分降序、同分 posted_at 新→旧、30 天无反馈沉底
@@ -128,49 +138,55 @@ export const jobsRoute = new Hono()
   // M3 采集器入库：按 dedup_key 幂等 upsert（仅 compose 内网调用）
   // §5.5：冲突时仅当已存在记录 description 为空且本次携带非空 JD → 仅更新 description（其余字段不动）
   .post('/ingest', async (c) => {
-    const parsed = ingestSchema.safeParse(await c.req.json())
-    if (!parsed.success) return c.json({ error: parsed.error.issues }, 400)
-    const seen = new Set<string>()
-    const values = parsed.data.jobs
-      .map((j) => ({
-        ...j,
-        location: j.location ?? null,
-        salaryMin: j.salaryMin ?? null,
-        salaryMax: j.salaryMax ?? null,
-        postedAt: j.postedAt ?? null,
-        dedupKey: createHash('md5').update(j.source + j.sourceUrl).digest('hex'),
-      }))
-      .filter((v) => {
-        if (seen.has(v.dedupKey)) return false
-        seen.add(v.dedupKey)
-        return true
-      })
-    if (!values.length) return c.json({ inserted: 0, updated: 0, skipped: 0 }, 201)
-    // 确定性计数：先查出现有记录，算出「原 JD 为空且本次带非空 JD」的冲突行数 = updated
-    const existing = await db
-      .select({ dedupKey: jobs.dedupKey, description: jobs.description })
-      .from(jobs)
-      .where(
-        inArray(
-          jobs.dedupKey,
-          values.map((v) => v.dedupKey),
-        ),
-      )
-    const emptyDesc = new Set(existing.filter((e) => !e.description).map((e) => e.dedupKey))
-    const willUpdate = values.filter((v) => emptyDesc.has(v.dedupKey) && v.description).length
-    const rows = await db
-      .insert(jobs)
-      .values(values)
-      .onConflictDoUpdate({
-        target: jobs.dedupKey,
-        set: { description: sql`excluded.description` },
-        setWhere: sql`coalesce(${jobs.description}, '') = '' and excluded.description <> ''`,
-      })
-      .returning({ id: jobs.id })
-    // 返回行 = 新插入 + 真实 update（setWhere 未生效的冲突行不返回），updated 取预算口径
-    const updated = willUpdate
-    const inserted = rows.length - updated
-    return c.json({ inserted, updated, skipped: values.length - rows.length }, 201)
+    try {
+      const parsed = ingestSchema.safeParse(await c.req.json())
+      if (!parsed.success) return c.json({ error: parsed.error.issues }, 400)
+      const seen = new Set<string>()
+      const values = parsed.data.jobs
+        .map((j) => ({
+          ...j,
+          location: j.location ?? null,
+          salaryMin: j.salaryMin ?? null,
+          salaryMax: j.salaryMax ?? null,
+          postedAt: j.postedAt ?? null,
+          dedupKey: createHash('md5').update(j.source + j.sourceUrl).digest('hex'),
+        }))
+        .filter((v) => {
+          if (seen.has(v.dedupKey)) return false
+          seen.add(v.dedupKey)
+          return true
+        })
+      if (!values.length) return c.json({ inserted: 0, updated: 0, skipped: 0 }, 201)
+      // 确定性计数：先查出现有记录，算出「原 JD 为空且本次带非空 JD」的冲突行数 = updated
+      const existing = await db
+        .select({ dedupKey: jobs.dedupKey, description: jobs.description })
+        .from(jobs)
+        .where(
+          inArray(
+            jobs.dedupKey,
+            values.map((v) => v.dedupKey),
+          ),
+        )
+      const emptyDesc = new Set(existing.filter((e) => !e.description).map((e) => e.dedupKey))
+      const willUpdate = values.filter((v) => emptyDesc.has(v.dedupKey) && v.description).length
+      const rows = await db
+        .insert(jobs)
+        .values(values)
+        .onConflictDoUpdate({
+          target: jobs.dedupKey,
+          set: { description: sql`excluded.description` },
+          setWhere: sql`coalesce(${jobs.description}, '') = '' and excluded.description <> ''`,
+        })
+        .returning({ id: jobs.id })
+      // 返回行 = 新插入 + 真实 update（setWhere 未生效的冲突行不返回），updated 取预算口径
+      const updated = willUpdate
+      const inserted = rows.length - updated
+      return c.json({ inserted, updated, skipped: values.length - rows.length }, 201)
+    } catch (error) {
+      const code = ingestErrorCode(error)
+      console.error(`[ingest] 入库失败 code=${code}`)
+      return c.json({ error: 'JOB_INGEST_FAILED', code }, 500)
+    }
   })
 
   // addFeedback(jobId, action, reason?, comment?)：追加式，不改写历史（M4.5 起与飞书卡片回调共用 feedback.addFeedback）
