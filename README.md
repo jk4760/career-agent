@@ -160,6 +160,12 @@ ops/daily.sh status             # 只读巡检：采集/评分/推送状态
 - 私有访问已启用：Web 与普通 API 使用 SSH 隧道，见 `docs/m5-private-access.md`；飞书回调继续公网放行。
 - 测试：`npm test --workspace api`；Web 另跑 `npm run build --workspace web`。交付与回滚说明见 `docs/m5-delivery.md`。
 
+## AI 素材沉淀与模型目录
+
+- 素材能力域支持自定义，故事表单可直接上传附件；成功 AI 回复可编辑确认后保存为素材或问答，并记录来源与持久化去重。
+- 新建会话可选择服务端目录中的已配置模型，会话创建后模型固定；评分与报告仍用原 Moonshot 配置。第二模型仅通过 `AI_CHAT_MODEL_CATALOG_JSON` 配置，Key 只放服务器 `.env`。
+- 交付、配置与回滚说明见 `docs/ai-material-model-enhancements.md`。
+
 ## 里程碑
 
 | 里程碑 | 内容 | 状态 |
