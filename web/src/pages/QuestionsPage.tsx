@@ -106,7 +106,7 @@ export default function QuestionsPage() {
       setMaterials(nextMaterials)
       setLoading(false)
     })
-  }, [repo])
+  }, [repo, searchParams])
 
   const byCategory = useMemo(() => {
     const map = new Map<string, InterviewQuestion[]>()

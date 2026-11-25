@@ -147,7 +147,7 @@ export default function MaterialsPage() {
 
   useEffect(() => {
     void reload()
-  }, [reload])
+  }, [reload, searchParams])
 
   useEffect(() => {
     const focus = searchParams.get('focus')
